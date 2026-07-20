@@ -478,7 +478,9 @@ aiPlatform:
   ## remote yet. Ingress host is reused from the old openwebui deployment
   ## since LibreChat is taking over as the chat UI.
   librechat:
-    repoURL: https://baltig.infn.it/lnf-da-control/argus-helm-chart.git
+    ## matches argusDefaults.charturl in epik8s-chart's own values.yaml - the
+    ## same repo every beamline's argus service already points at.
+    repoURL: https://github.com/infn-epics/argus-helm-chart.git
     ingress:
       enabled: true
       hosts:
@@ -486,6 +488,33 @@ aiPlatform:
           paths:
             - path: /
               pathType: ImplementationSpecific
+    ## serviceName confirmed by rendering each beamline's computed argus values
+    ## through argus-helm-chart directly (helm's naming convention for release
+    ## name "argus" + chart name "argus-helm-chart", not simply "argus-mcp").
+    argusMcpServers:
+      ## sparc and euaps run argus-mcp only (librechat.enabled: false, see
+      ## epik8-sparc/deploy/values.yaml and epik8s-euaps/deploy/values.yaml) -
+      ## registered here instead of either running its own LibreChat.
+      - name: sparc-argus
+        namespace: sparc
+        serviceName: argus-argus-helm-chart-argus-mcp
+        title: "SPARC ARGUS"
+        description: "ARGUS accelerator-control assistant for the SPARC beamline."
+      - name: euaps-argus
+        namespace: euaps
+        serviceName: argus-argus-helm-chart-argus-mcp
+        title: "EUAPS ARGUS"
+        description: "ARGUS accelerator-control assistant for the EUAPS beamline."
+      ## btf keeps running its OWN dedicated LibreChat too (2 BTF-specific
+      ## AI-Gateway LLM endpoints + RAGFLOW-backed documentation search that
+      ## the central instance doesn't have) - epik8s-btf/deploy/values.yaml is
+      ## untouched. This just makes the same already-running argus-mcp also
+      ## reachable from the central LibreChat.
+      - name: btf-argus
+        namespace: btf
+        serviceName: argus-argus-helm-chart-argus-mcp
+        title: "BTF ARGUS"
+        description: "ARGUS accelerator-control assistant for the BTF beamline."
 
   confluenceIngester:
     baseUrl: https://confluence.infn.it
