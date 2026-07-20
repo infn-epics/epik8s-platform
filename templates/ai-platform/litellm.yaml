@@ -1,0 +1,92 @@
+{{- if and .Values.aiPlatform.enabled .Values.aiPlatform.litellm.enabled }}
+{{- $ns := .Values.aiPlatform.namespace }}
+{{- $v := .Values.aiPlatform.litellm }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+  namespace: {{ $ns }}
+data:
+  config.yaml: |
+{{ $v.configYaml | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: {{ $ns }}
+  labels:
+    app: litellm
+spec:
+  replicas: {{ $v.replicas }}
+  selector:
+    matchLabels:
+      app: litellm
+  template:
+    metadata:
+      labels:
+        app: litellm
+    spec:
+      containers:
+        - name: litellm
+          image: {{ $v.image }}
+          args: ["--port", "4000", "--config", "/app/config/config.yaml"]
+          ports:
+            - name: http
+              containerPort: 4000
+              protocol: TCP
+          env:
+            - name: LITELLM_LOG
+              value: "INFO"
+            - name: STORE_MODEL_IN_DB
+              value: "False"
+          resources:
+            {{- toYaml $v.resources | nindent 12 }}
+          volumeMounts:
+            - name: litellm-config
+              mountPath: /app/config
+      volumes:
+        - name: litellm-config
+          configMap:
+            name: litellm-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  namespace: {{ $ns }}
+spec:
+  type: ClusterIP
+  selector:
+    app: litellm
+  ports:
+    - name: http
+      port: 4000
+      targetPort: http
+      protocol: TCP
+{{- if $v.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: litellm
+  namespace: {{ $ns }}
+spec:
+  ingressClassName: {{ $.Values.aiPlatform.ingress.className }}
+  tls:
+    - hosts:
+        - {{ $v.ingress.host }}
+      secretName: {{ $.Values.aiPlatform.ingress.tlsSecretName }}
+  rules:
+    - host: {{ $v.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: litellm
+                port:
+                  number: 4000
+{{- end }}
+{{- end }}

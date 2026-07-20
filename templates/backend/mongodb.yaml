@@ -1,0 +1,61 @@
+{{- if and .Values.backend.enabled .Values.backend.mongo.enabled }}
+{{- $ns := .Values.backend.namespace }}
+{{- $m := .Values.backend.mongo }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb
+  namespace: {{ $ns }}
+spec:
+  ports:
+    - port: 27017
+      targetPort: 27017
+  selector:
+    app: mongodb
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongodb-data
+  namespace: {{ $ns }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if $m.storageClassName }}
+  storageClassName: {{ $m.storageClassName }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $m.storageSize }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+  namespace: {{ $ns }}
+spec:
+  serviceName: mongodb
+  replicas: {{ $m.replicaCount }}
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      containers:
+        - name: mongodb
+          image: mongo:7.0
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - name: mongodb-data
+              mountPath: /data/db
+          resources:
+            {{- toYaml $m.resources | nindent 12 }}
+      volumes:
+        - name: mongodb-data
+          persistentVolumeClaim:
+            claimName: mongodb-data
+{{- end }}

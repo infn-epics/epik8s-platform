@@ -1,0 +1,544 @@
+## Environment values reproducing the current k8sda cluster's platform state exactly.
+## Generated from live kubectl/helm state on 2026-07-20 - see README.md for the
+## verification procedure used to confirm this renders equivalently to what's live.
+
+networking:
+  enabled: true
+  metallb:
+    pools:
+      - name: default-k8s-108
+        addresses:
+          - 192.168.108.220-192.168.108.254
+        autoAssign: true
+        avoidBuggyIPs: false
+      - name: default-pool-10-6
+        addresses:
+          - 10.10.6.240-10.10.6.250
+        autoAssign: true
+        avoidBuggyIPs: false
+      - name: default-pool-109
+        addresses:
+          - 192.168.109.240-192.168.109.250
+        autoAssign: true
+        avoidBuggyIPs: false
+    advertisements:
+      - name: advert-valan-10-6
+        ipAddressPools:
+          - default-pool-10-6
+        nodeSelectors:
+          - matchLabels:
+              lb-network-access: vlan-10-6
+      - name: advert-valan-108
+        ipAddressPools:
+          - default-k8s-108
+        nodeSelectors:
+          - matchLabels:
+              lb-network-access: vlan-108
+      - name: advert-valan-109
+        ipAddressPools:
+          - default-pool-109
+        nodeSelectors:
+          - matchLabels:
+              lb-network-access: vlan-109
+      ## NOTE: "l2" duplicates advert-valan-109 (same pool, same selector). Redundant
+      ## but harmless - reproduced as-is rather than silently collapsed, see README.
+      - name: l2
+        ipAddressPools:
+          - default-pool-109
+        nodeSelectors:
+          - matchLabels:
+              lb-network-access: vlan-109
+
+  nads:
+    - name: btf-189
+      namespace: btf
+      config: |
+        {
+          "cniVersion": "0.3.1",
+          "type": "ipvlan",
+          "master": "eth0.189",
+          "mode": "l2",
+          "ipam": {
+            "type": "host-local",
+            "ranges": [
+              [{
+                "subnet": "192.168.189.0/24",
+                "rangeStart": "192.168.189.240",
+                "rangeEnd": "192.168.189.254"
+              }]
+            ]
+          }
+        }
+    - name: btf-189
+      namespace: default
+      config: |
+        {
+          "cniVersion": "0.3.1",
+          "type": "macvlan",
+          "master": "eth0.189",
+          "mode": "bridge",
+          "ipam": {
+            "type": "whereabouts",
+            "range": "192.168.189.0/24",
+            "range_start": "192.168.189.240",
+            "range_end": "192.168.189.254",
+            "gateway": "192.168.189.1",
+            "routes": [
+              { "dst": "0.0.0.0/0" }
+            ],
+            "kubernetes": {
+              "kubeconfig": "/etc/cni/net.d/whereabouts.d/whereabouts.kubeconfig"
+            }
+          }
+        }
+    - name: euaps-cam-multinode
+      namespace: default
+      config: |-
+        {
+          "cniVersion": "0.3.1",
+          "type": "bridge",
+          "bridge": "br115",
+          "isGateway": false,
+          "isDefaultGateway": false,
+          "ipMasq": false,
+          "hairpinMode": false,
+          "ipam": {
+            "type": "whereabouts",
+            "range": "192.168.115.0/24",
+            "range_start": "192.168.115.150",
+            "range_end": "192.168.115.250",
+            "gateway": "192.168.115.10",
+            "routes": [
+              {
+                "dst": "0.0.0.0/0"
+              }
+            ],
+            "kubernetes": {
+              "kubeconfig": "/etc/cni/net.d/whereabouts.d/whereabouts.kubeconfig"
+            },
+            "network_name": "vlan-115-cameras"
+          }
+        }
+    - name: sparc-cams-multinode
+      namespace: default
+      config: |
+        {
+          "cniVersion": "0.3.1",
+          "type": "bridge",
+          "bridge": "br110",
+          "isGateway": false,
+          "isDefaultGateway": false,
+          "ipMasq": false,
+          "hairpinMode": false,
+          "ipam": {
+            "type": "whereabouts",
+            "range": "192.168.110.0/24",
+            "range_start": "192.168.110.150",
+            "range_end": "192.168.110.250",
+            "gateway": "192.168.110.10",
+            "routes": [
+              { "dst": "0.0.0.0/0" }
+            ],
+            "kubernetes": {
+              "kubeconfig": "/etc/cni/net.d/whereabouts.d/whereabouts.kubeconfig"
+            }
+          }
+        }
+    - name: sparc-net-multinode
+      namespace: default
+      config: |
+        {
+          "cniVersion": "0.3.1",
+          "type": "bridge",
+          "bridge": "br197",
+          "isGateway": false,
+          "isDefaultGateway": false,
+          "ipMasq": false,
+          "hairpinMode": false,
+          "ipam": {
+            "type": "whereabouts",
+            "range": "192.168.197.0/24",
+            "range_start": "192.168.197.200",
+            "range_end": "192.168.197.250",
+            "gateway": "192.168.197.1",
+            "routes": [
+              { "dst": "0.0.0.0/0" }
+            ],
+            "kubernetes": {
+              "kubeconfig": "/etc/cni/net.d/whereabouts.d/whereabouts.kubeconfig"
+            }
+          }
+        }
+    - name: euaps-cams
+      namespace: euaps
+      config: |-
+        {"cniVersion":"0.3.1","type":"bridge","bridge":"br115","isGateway":false,"isDefaultGateway":false,"ipMasq":false,"hairpinMode":false,"ipam":{"type":"whereabouts","range":"192.168.115.0/24","range_start":"192.168.115.150","range_end":"192.168.115.250","kubernetes":{"kubeconfig":"/etc/cni/net.d/whereabouts.d/whereabouts.kubeconfig"},"network_name":"vlan-115-cameras"}}
+    - name: euaps-cam
+      namespace: sparc
+      config: |
+        {
+          "cniVersion": "0.3.1",
+          "type": "bridge",
+          "bridge": "br115",
+          "isGateway": false,
+          "isDefaultGateway": false,
+          "ipMasq": false,
+          "hairpinMode": false,
+          "ipam": {
+            "type": "host-local",
+            "subnet": "192.168.115.0/24",
+            "rangeStart": "192.168.115.201",
+            "rangeEnd": "192.168.115.253",
+            "gateway": "192.168.115.10"
+          }
+        }
+    - name: sparc-br-cams
+      namespace: sparc
+      config: |
+        {
+          "cniVersion": "0.3.1",
+          "type": "bridge",
+          "bridge": "br110",
+          "isGateway": false,
+          "isDefaultGateway": false,
+          "ipMasq": false,
+          "hairpinMode": false,
+          "ipam": {
+            "type": "host-local",
+            "subnet": "192.168.110.0/24",
+            "rangeStart": "192.168.110.201",
+            "rangeEnd": "192.168.110.253",
+            "gateway": "192.168.110.10"
+          }
+        }
+    - name: sparc-cams
+      namespace: sparc
+      config: |-
+        { "cniVersion": "0.3.1", "type": "macvlan", "master": "enp1s0f1", "mode": "bridge", "mtu": 9000, "ipam": { "type": "host-local", "subnet": "192.168.110.0/24", "rangeStart": "192.168.110.240", "rangeEnd": "192.168.110.254", "gateway": "192.168.110.1", "routes": [ { "dst": "192.168.110.0/24" } ] } }
+    - name: sparc-magnets
+      namespace: sparc
+      config: |-
+        { "cniVersion": "0.3.1", "type": "macvlan", "master": "eno1", "mode": "bridge", "ipam": { "type": "host-local", "subnet": "192.168.0.0/24", "rangeStart": "192.168.0.202", "rangeEnd": "192.168.0.254", "routes": [] } }
+    - name: sparc-net
+      namespace: sparc
+      config: |
+        {
+          "cniVersion": "0.3.1",
+          "type": "bridge",
+          "bridge": "br197",
+          "isGateway": false,
+          "isDefaultGateway": false,
+          "ipMasq": false,
+          "hairpinMode": false,
+          "ipam": {
+            "type": "host-local",
+            "subnet": "192.168.197.0/24",
+            "rangeStart": "192.168.197.245",
+            "rangeEnd": "192.168.197.253",
+            "gateway": "192.168.197.1"
+          }
+        }
+
+storage:
+  enabled: true
+  classes:
+    - name: nfs20t
+      provisioner: nfs.csi.k8s.io
+      reclaimPolicy: Retain
+      volumeBindingMode: Immediate
+      allowVolumeExpansion: true
+      mountOptions:
+        - hard
+        - nfsvers=4
+        - rw
+      parameters:
+        server: nas01a-148.lnf.infn.it
+        share: /export/nfs/k8sda00
+    - name: archiver-lts
+      provisioner: nfs.csi.k8s.io
+      reclaimPolicy: Retain
+      volumeBindingMode: Immediate
+      allowVolumeExpansion: true
+      mountOptions:
+        - hard
+        - nfsvers=4.1
+        - rw
+      parameters:
+        server: 192.168.197.157
+        share: /data_epik8s/archiver/lts
+    - name: archiver-mts
+      provisioner: nfs.csi.k8s.io
+      reclaimPolicy: Retain
+      volumeBindingMode: Immediate
+      allowVolumeExpansion: true
+      mountOptions:
+        - hard
+        - nfsvers=4.1
+        - rw
+      parameters:
+        server: 192.168.197.157
+        share: /data_epik8s/archiver/mts
+    ## NOTE: cephfs-rwx's live source of truth today is the "cephfs-config" ArgoCD
+    ## Application (repo k8sda.git, path charts/cephfs-config) - codified here for
+    ## completeness/reproducibility, not as a competing GitOps owner. See README.
+    - name: cephfs-rwx
+      provisioner: cephfs.csi.ceph.com
+      reclaimPolicy: Retain
+      volumeBindingMode: Immediate
+      allowVolumeExpansion: true
+      mountOptions:
+        - debug
+      parameters:
+        clusterID: da-cephfs
+        fsName: test-da
+        csi.storage.k8s.io/provisioner-secret-name: csi-cephfs-secret
+        csi.storage.k8s.io/provisioner-secret-namespace: ceph-csi-operator-system
+        csi.storage.k8s.io/controller-expand-secret-name: csi-cephfs-secret
+        csi.storage.k8s.io/controller-expand-secret-namespace: ceph-csi-operator-system
+        csi.storage.k8s.io/node-stage-secret-name: csi-cephfs-secret
+        csi.storage.k8s.io/node-stage-secret-namespace: ceph-csi-operator-system
+
+monitoring:
+  kubePrometheusStack:
+    enabled: true
+  grafana:
+    enabled: true
+
+## kube-prometheus-stack subchart values, reconciled against the live "prometheus"
+## helm release. NOTE: `helm get values` initially reported nodeExporter.extraArgs /
+## hostNetwork / service.port(9200) as "user-supplied", but kube-prometheus-stack's
+## enable flags (kubeStateMetrics.*, nodeExporter.* at this level) are only used for
+## the dependency `condition:` - the actual pass-through values for those two
+## subcharts live under the hyphenated `kube-state-metrics:` / `prometheus-node-exporter:`
+## keys instead, so those settings were silently inert. Verified against the live
+## DaemonSet: it actually runs on hostNetwork with the chart's default port 9100,
+## not 9200. Reproduced here as what's ACTUALLY running, not what was attempted -
+## flagged in README as a pre-existing inconsistency, not something to silently "fix".
+kube-prometheus-stack:
+  ## pins the exact resource names from the live "prometheus" helm release (this
+  ## chart is now a dependency of an umbrella release, so it no longer inherits
+  ## that release name for free - see README).
+  fullnameOverride: prometheus-kube-prometheus
+  alertmanager:
+    enabled: false
+  grafana:
+    enabled: false ## grafana is deployed as its own separate release, see below
+  kubeStateMetrics:
+    enabled: true
+  nodeExporter:
+    enabled: true
+  prometheus:
+    prometheusSpec:
+      hostNetwork: false
+      serviceMonitorSelector: {}
+      serviceMonitorSelectorNilUsesHelmValues: false
+    service:
+      port: 9090
+      targetPort: 9090
+  ## grandchild dependencies (kube-state-metrics, prometheus-node-exporter) are
+  ## nested INSIDE kube-prometheus-stack's own chart tree, so their pass-through
+  ## values must be scoped here, not at this file's top level.
+  kube-state-metrics:
+    fullnameOverride: prometheus-kube-state-metrics
+  prometheus-node-exporter:
+    fullnameOverride: prometheus-prometheus-node-exporter
+
+## grafana subchart values - exact USER-SUPPLIED VALUES from the live "grafana" helm
+## release (grafana-10.3.0), EXCEPT adminUser/adminPassword: the live release set
+## these as literal values, which this chart must not reproduce in git. The admin
+## credentials already exist as the "grafana" Secret (keys admin-user/admin-password)
+## created by that release - referencing it via admin.existingSecret is functionally
+## identical (same Secret object, unchanged) without committing the plaintext.
+## See README.md "Secrets handling".
+grafana:
+  ## pins the exact resource name from the live "grafana" helm release, see the
+  ## kube-prometheus-stack.fullnameOverride note above.
+  fullnameOverride: grafana
+  admin:
+    existingSecret: grafana
+    userKey: admin-user
+    passwordKey: admin-password
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: SPARC EPICS Archiver
+          type: sasaki77-archiverappliance-datasource
+          access: proxy
+          url: http://archiver.sparc.svc.cluster.local:17665
+          isDefault: true
+  env:
+    GF_SERVER_ROOT_URL: https://grafana.k8sda.lnf.infn.it
+  grafana.ini:
+    plugins:
+      allow_loading_unsigned_plugins: sasaki77-archiverappliance-datasource
+    server:
+      root_url: https://grafana.k8sda.lnf.infn.it
+  plugins:
+    - sasaki77-archiverappliance-datasource
+  extraInitContainers:
+    - name: install-custom-plugins
+      image: grafana/grafana:latest
+      command:
+        - /bin/sh
+        - -c
+      args:
+        - grafana-cli --pluginUrl https://github.com/sasaki77/archiverappliance-datasource/releases/latest/download/archiverappliance-datasource.zip
+          plugins install sasaki77-archiverappliance-datasource;
+      volumeMounts:
+        - name: grafana-plugins
+          mountPath: /var/lib/grafana/plugins
+  extraVolumes:
+    - name: grafana-plugins
+      emptyDir: {}
+  extraVolumeMounts:
+    - name: grafana-plugins
+      mountPath: /var/lib/grafana/plugins
+  persistence:
+    enabled: true
+    ## live storage is a pre-existing, separately-managed PVC (ReadWriteMany on
+    ## the nfs20t StorageClass codified above), not one the chart should create.
+    existingClaim: grafana-nfs
+    size: 20Gi
+  service:
+    type: ClusterIP
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts:
+      - grafana.k8sda.lnf.infn.it
+    path: /
+    pathType: Prefix
+    tls:
+      - secretName: grafana-tls
+        hosts:
+          - grafana.k8sda.lnf.infn.it
+
+aiPlatform:
+  enabled: true
+  namespace: ai-platform
+
+  proxy:
+    enabled: true
+    httpProxy: http://squid.lnf.infn.it:3128
+    httpsProxy: http://squid.lnf.infn.it:3128
+    ## this is vllm's own NO_PROXY value specifically - other components set their
+    ## own (narrower) noProxy field below, matching what's actually live.
+    noProxy: "localhost,127.0.0.1,::1,10.0.0.0/8,192.168.0.0/16,.svc,.svc.cluster.local,.lnf.infn.it"
+
+  ingress:
+    className: nginx
+    tlsSecretName: ai-platform-tls
+
+  litellm:
+    ingress:
+      enabled: true
+      host: litellm.k8sda.lnf.infn.it
+    ## exact USER-SUPPLIED config from the live "litellm-config" ConfigMap.
+    configYaml: |
+      model_list:
+        - model_name: gpt-4o-mini
+          litellm_params:
+            model: openai/llama3-8b
+            api_base: http://vllm.ai-platform.svc.cluster.local:8000/v1
+            api_key: none
+        - model_name: llama3-8b
+          litellm_params:
+            model: openai/llama3-8b
+            api_base: http://vllm.ai-platform.svc.cluster.local:8000/v1
+            api_key: none
+      general_settings:
+        master_key: "change-me"
+        completion_model: llama3-8b
+        disable_spend_logs: true
+        enforce_user_param: false
+        # Optional soft rate-limit (requests/minute by key)
+        max_requests_per_minute: 120
+      router_settings:
+        routing_strategy: simple-shuffle
+        set_verbose: false
+
+  qdrant:
+    ## live PVC uses nfs20t (codified above under storage.classes), not local-path.
+    storageClassName: nfs20t
+    ingress:
+      enabled: true
+      host: qdrant.k8sda.lnf.infn.it
+
+  mcp:
+    kubernetesMcp:
+      ingress:
+        enabled: true
+        host: k8sda-mcp.k8sda.lnf.infn.it
+
+  ## NOTE: unlike the rest of this file, there is no live centralized
+  ## LibreChat to reproduce here - this is new capability, not codification.
+  ## repoURL is a placeholder for the same reason as the top-level
+  ## epik8s-platform-in-epik8s-da-infra blocker: argus-helm-chart has no git
+  ## remote yet. Ingress host is reused from the old openwebui deployment
+  ## since LibreChat is taking over as the chat UI.
+  librechat:
+    repoURL: https://baltig.infn.it/lnf-da-control/argus-helm-chart.git
+    ingress:
+      enabled: true
+      hosts:
+        - host: llm-ui.k8sda.lnf.infn.it
+          paths:
+            - path: /
+              pathType: ImplementationSpecific
+
+  confluenceIngester:
+    baseUrl: https://confluence.infn.it
+    spaces: LDCG
+    sinceDays: "36500"
+
+backend:
+  enabled: true
+  namespace: backend
+
+  elasticsearch:
+    ## live PVC has no explicit storageClassName -> uses the cluster default
+    ## (local-path, already codified as default in storage.classes).
+    storageSize: 50Gi
+
+  mongo:
+    ## live PVC uses archiver-lts (codified above under storage.classes).
+    storageClassName: archiver-lts
+
+  kafka:
+    ## external LoadBalancer listener - IPs come from the default-k8s-108 MetalLB
+    ## pool already codified under networking.metallb.pools.
+    externalAccess:
+      enabled: true
+      bootstrapLoadBalancerIP: 192.168.108.251
+      brokers:
+        - broker: 0
+          loadBalancerIP: 192.168.108.252
+        - broker: 1
+          loadBalancerIP: 192.168.108.253
+        - broker: 2
+          loadBalancerIP: 192.168.108.254
+    ## NOTE: two node pools exist live for the same "eph-kafka" cluster - "dual"
+    ## (ephemeral storage, no resource limits) looks like a leftover from an
+    ## earlier migration, alongside "eph-kafka-pool" (persistent, resourced).
+    ## Reproduced as-is rather than silently collapsed, see README.
+    nodePools:
+      - name: dual
+        replicas: 3
+        roles: [broker, controller]
+        storage:
+          type: jbod
+          volumes:
+            - id: 0
+              type: ephemeral
+              kraftMetadata: shared
+      - name: eph-kafka-pool
+        replicas: 3
+        roles: [controller, broker]
+        storage:
+          type: persistent-claim
+          size: 10Gi
+          deleteClaim: false
+        resources:
+          limits: { cpu: 2, memory: 4Gi }
+          requests: { cpu: 1, memory: 2Gi }

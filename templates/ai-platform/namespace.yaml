@@ -1,0 +1,8 @@
+{{- if .Values.aiPlatform.enabled }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.aiPlatform.namespace }}
+  labels:
+    app.kubernetes.io/part-of: ai-platform
+{{- end }}

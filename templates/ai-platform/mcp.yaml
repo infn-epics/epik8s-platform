@@ -1,0 +1,362 @@
+{{- if .Values.aiPlatform.enabled }}
+{{- $ns := .Values.aiPlatform.namespace }}
+{{- $mcp := .Values.aiPlatform.mcp }}
+{{- if $mcp.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mcp-config
+  namespace: {{ $ns }}
+data:
+  embeddings-url: {{ $mcp.embeddingsUrl | quote }}
+  prometheus-url: {{ $mcp.prometheusUrl | quote }}
+  qdrant-url: {{ $mcp.qdrantUrl | quote }}
+  rag-default-collection: {{ $mcp.ragDefaultCollection | quote }}
+{{- end }}
+
+{{- /* epics-mcp and git-mcp are currently placeholders (hashicorp/http-echo) on
+       the live cluster, not real MCP backends - reproduced as-is, see README. */ -}}
+{{- range $name, $c := $mcp.placeholders }}
+{{- if $c.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    app: {{ $name }}
+spec:
+  replicas: {{ $c.replicas }}
+  selector:
+    matchLabels:
+      app: {{ $name }}
+  template:
+    metadata:
+      labels:
+        app: {{ $name }}
+    spec:
+      containers:
+        - name: {{ $name }}
+          image: {{ $c.image }}
+          args: ["-listen=:8080", "-text={{ $name }}-ok"]
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: MCP_TRANSPORT
+              value: streamable-http
+          resources:
+            {{- toYaml $c.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ $name }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $name }}
+  minReplicas: {{ $c.minReplicas }}
+  maxReplicas: {{ $c.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+{{- end }}
+{{- end }}
+
+{{- if $mcp.kubernetesMcp.enabled }}
+{{- $v := $mcp.kubernetesMcp }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernetes-mcp
+  namespace: {{ $ns }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubernetes-mcp-readonly
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "endpoints", "nodes", "namespaces", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "daemonsets", "statefulsets", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernetes-mcp-readonly
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernetes-mcp-readonly
+subjects:
+  - kind: ServiceAccount
+    name: kubernetes-mcp
+    namespace: {{ $ns }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubernetes-mcp-code
+  namespace: {{ $ns }}
+data:
+  server.py: |
+{{ .Files.Get "files/ai-platform/kubernetes-mcp-server.py" | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernetes-mcp
+  namespace: {{ $ns }}
+  labels:
+    app: kubernetes-mcp
+spec:
+  replicas: {{ $v.replicas }}
+  selector:
+    matchLabels:
+      app: kubernetes-mcp
+  template:
+    metadata:
+      labels:
+        app: kubernetes-mcp
+    spec:
+      serviceAccountName: kubernetes-mcp
+      containers:
+        - name: kubernetes-mcp
+          image: {{ $v.image }}
+          command: ["sh", "-lc"]
+          args: ["pip install --no-cache-dir fastmcp kubernetes requests && python /app/server.py"]
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: MCP_TRANSPORT
+              value: streamable-http
+            - name: PROMETHEUS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: mcp-config
+                  key: prometheus-url
+            {{- if $.Values.aiPlatform.proxy.enabled }}
+            - name: HTTP_PROXY
+              value: {{ $.Values.aiPlatform.proxy.httpProxy }}
+            - name: HTTPS_PROXY
+              value: {{ $.Values.aiPlatform.proxy.httpsProxy }}
+            - name: NO_PROXY
+              value: {{ $v.noProxy }}
+            {{- end }}
+          resources:
+            {{- toYaml $v.resources | nindent 12 }}
+          volumeMounts:
+            - name: kubernetes-mcp-code
+              mountPath: /app/server.py
+              subPath: server.py
+      volumes:
+        - name: kubernetes-mcp-code
+          configMap:
+            name: kubernetes-mcp-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubernetes-mcp
+  namespace: {{ $ns }}
+spec:
+  type: ClusterIP
+  selector:
+    app: kubernetes-mcp
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: kubernetes-mcp
+  namespace: {{ $ns }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: kubernetes-mcp
+  minReplicas: {{ $v.minReplicas }}
+  maxReplicas: {{ $v.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+{{- if $v.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kubernetes-mcp
+  namespace: {{ $ns }}
+spec:
+  ingressClassName: {{ $.Values.aiPlatform.ingress.className }}
+  rules:
+    - host: {{ $v.ingress.host }}
+      http:
+        paths:
+          - path: /mcp
+            pathType: Prefix
+            backend:
+              service:
+                name: kubernetes-mcp
+                port:
+                  number: 8080
+{{- end }}
+{{- end }}
+
+{{- if $mcp.ragMcp.enabled }}
+{{- $v := $mcp.ragMcp }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-mcp-code
+  namespace: {{ $ns }}
+data:
+  server.py: |
+{{ .Files.Get "files/ai-platform/rag-mcp-server.py" | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-mcp
+  namespace: {{ $ns }}
+  labels:
+    app: rag-mcp
+spec:
+  replicas: {{ $v.replicas }}
+  selector:
+    matchLabels:
+      app: rag-mcp
+  template:
+    metadata:
+      labels:
+        app: rag-mcp
+    spec:
+      containers:
+        - name: rag-mcp
+          image: {{ $v.image }}
+          command: ["sh", "-lc"]
+          args: ["pip install --no-cache-dir fastmcp requests && python /app/server.py"]
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: MCP_TRANSPORT
+              value: streamable-http
+            - name: QDRANT_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: mcp-config
+                  key: qdrant-url
+            - name: DEFAULT_COLLECTION
+              valueFrom:
+                configMapKeyRef:
+                  name: mcp-config
+                  key: rag-default-collection
+            - name: QDRANT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: qdrant-secrets
+                  key: api-key
+            - name: REQUEST_TIMEOUT_SECONDS
+              value: "20"
+            {{- if $.Values.aiPlatform.proxy.enabled }}
+            - name: HTTP_PROXY
+              value: {{ $.Values.aiPlatform.proxy.httpProxy }}
+            - name: HTTPS_PROXY
+              value: {{ $.Values.aiPlatform.proxy.httpsProxy }}
+            - name: NO_PROXY
+              value: {{ $v.noProxy }}
+            {{- end }}
+          resources:
+            {{- toYaml $v.resources | nindent 12 }}
+          volumeMounts:
+            - name: rag-mcp-code
+              mountPath: /app/server.py
+              subPath: server.py
+      volumes:
+        - name: rag-mcp-code
+          configMap:
+            name: rag-mcp-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-mcp
+  namespace: {{ $ns }}
+spec:
+  type: ClusterIP
+  selector:
+    app: rag-mcp
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: rag-mcp
+  namespace: {{ $ns }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: rag-mcp
+  minReplicas: {{ $v.minReplicas }}
+  maxReplicas: {{ $v.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+{{- end }}
+{{- end }}

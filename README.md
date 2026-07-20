@@ -1,0 +1,277 @@
+# epik8s-platform
+
+Platform-layer configuration for EPIK8S clusters: networking, storage, monitoring,
+backend (MongoDB/Elasticsearch/Kafka) and the AI platform - everything a beamline
+deployed via `epik8s-chart` needs underneath it, kept separate from beamline
+charts (`epik8s-chart` and the per-facility `epik8-sparc` / `epik8s-btf` /
+`epik8s-eli` repos).
+
+This codifies what is *actually running* on the `k8sda` cluster today into a
+Helm chart, so that state has a git source of truth for the first time. It does
+**not** change anything on the live cluster - see "What this is not" below.
+
+## Why this exists
+
+Before this chart, the platform layer had no single source of truth:
+
+- MetalLB `IPAddressPool`/`L2Advertisement` and all `NetworkAttachmentDefinition`s
+  were applied by hand, no git source.
+- The 4 site `StorageClass`es (`nfs20t`, `archiver-lts`, `archiver-mts`, `cephfs-rwx`)
+  were applied by hand.
+- Monitoring (`kube-prometheus-stack` + `grafana`) was installed via plain
+  `helm install`, not tracked by ArgoCD.
+- The `ai-platform` namespace (vllm, litellm, qdrant, embeddings,
+  confluence-ingester, mcp servers, `openwebui`) existed as a kustomize tree in
+  `k8sda/ai-platform/` that was **not** wired into ArgoCD - the live objects were
+  applied from it manually, and had already drifted from that tree in places
+  (e.g. `epics-mcp` and `git-mcp` exist live but have no corresponding directory
+  in `k8sda/ai-platform/`). `openwebui` has since been replaced by a
+  centralized LibreChat - see "Centralized LibreChat" below; that part is new
+  capability, not codification of something live.
+- The `backend` namespace (MongoDB, Elasticsearch/Kibana via the ECK operator,
+  Kafka via the Strimzi operator - referenced by every beamline's
+  `backend.mongo.host` / `.elasticsearch.host` / `.kafka.host` values in
+  `epik8s-chart`) *is* ArgoCD-managed, but by a real external repo
+  (`github.com/infn-epics/epik8s-backend.git`, branch `backend-operators`) whose
+  locally-checked-out branch (`main`) had already drifted from what's live - see
+  the note in `templates/backend/` below.
+
+This chart was built directly from live `kubectl`/`helm` state (not from the
+`k8sda` git tree, which was found to be stale/incomplete in places), and every
+resource it renders was diffed against the live cluster - see "Verification"
+below.
+
+## Scope: what's codified vs. what's a prerequisite
+
+This chart codifies **site-specific policy objects** - the CRs/values that
+encode "this cluster, these subnets, these hostnames, these credentials-by-reference".
+It does **not** install the underlying operators/controllers:
+
+| Codified here | Prerequisite (install separately) |
+|---|---|
+| MetalLB `IPAddressPool` / `L2Advertisement` | MetalLB controller (native manifest, `quay.io/metallb/controller:v0.15.2` on this cluster - not a Helm release) |
+| `NetworkAttachmentDefinition`s | Multus, whereabouts IPAM (RKE2 addon on this cluster) |
+| `StorageClass`es | csi-driver-nfs, cephfs-csi-operator |
+| kube-prometheus-stack + grafana | ingress-nginx (RKE2 addon), cert-manager if TLS is terminated by cert-manager-issued secrets |
+| ai-platform workloads | GPU operator (for `vllm`'s `nvidia.com/gpu` request), ingress-nginx |
+| Elasticsearch/Kibana/Kafka CRs | eck-operator, strimzi-kafka-operator - both ARE Helm dependencies of this chart (see below), so nothing extra to install for those two specifically |
+| Centralized LibreChat (`aiPlatform.librechat`) | **ArgoCD** (this is the one domain in this chart that isn't a plain `helm template`/`helm install` target - see "Centralized LibreChat" below), and `argus-helm-chart` pushed to a real git remote |
+
+A from-scratch cluster needs those prerequisites in place first; this chart
+covers everything layered on top of them.
+
+## Centralized LibreChat
+
+`aiPlatform.librechat` replaces the old `openwebui` component with a single,
+cluster-wide [LibreChat](https://www.librechat.ai/) instance, deployed via
+[argus-helm-chart](../argus-helm-chart) (LibreChat + optional
+[ARGUS MCP](https://github.com/infn-epics/argus-mcp-server), the
+accelerator-control MCP server). Unlike every other `ai-platform` component,
+`templates/ai-platform/librechat.yaml` does **not** render a raw manifest or a
+native Helm dependency - `argus-helm-chart` isn't published to any Helm/OCI
+repository (git-only), and a `file://../argus-helm-chart` Chart.yaml
+dependency would only resolve on a machine that happens to have both repos
+checked out as siblings, silently breaking the moment ArgoCD (which only
+checks out this repo) tries to `helm dependency build` it. Instead it renders
+**one ArgoCD `Application`** sourcing `argus-helm-chart`'s repo directly - the
+same pattern `epik8s-da-infra` already uses for `epik8s-platform` itself. This
+is a deliberate, scoped exception: it's the only place in this chart that
+assumes ArgoCD at runtime.
+
+**Known blocker, same category as `epik8s-da-infra`'s note about this repo**:
+`aiPlatform.librechat.repoURL` in `values-k8sda.yaml` points at
+`https://baltig.infn.it/lnf-da-control/argus-helm-chart.git`, which doesn't
+exist yet - `argus-helm-chart` has only been developed locally. Push it there
+(or wherever it ends up, updating `repoURL` accordingly) before this
+Application will sync.
+
+**Why LibreChat, not each beamline's own instance**: every beamline used to
+deploy a full `argus-helm-chart` release (its own LibreChat + MongoDB +
+Meilisearch + a local ARGUS MCP wired to that beamline's own EPICS/archiver/
+channelfinder/etc.) via `epik8s-chart`'s `argus` service branch. The chat
+frontend is now centralized here instead; the per-beamline part that's
+genuinely beamline-specific - the ARGUS MCP server itself - stays exactly
+where it is. `argus-helm-chart` gained a `librechat.enabled` toggle (default
+`true`, so every existing per-beamline release is unaffected) so a beamline
+release can run ARGUS MCP only and register with this central instance
+instead - see that repo's own values.yaml. **No beamline has been migrated as
+part of this** - existing per-beamline releases keep running exactly as
+before until someone deliberately flips a specific one over later.
+
+**Registering a beamline's ARGUS MCP**: append to
+`aiPlatform.librechat.argusMcpServers` in `values-k8sda.yaml`:
+
+```yaml
+aiPlatform:
+  librechat:
+    argusMcpServers:
+      - name: btf-argus
+        namespace: btf
+        serviceName: argus-argus-helm-chart-argus-mcp # confirm, don't assume - see below
+        # port defaults to 8000, path defaults to "/sse"
+```
+
+`serviceName` is **not** simply `argus-mcp` - `argus-helm-chart`'s Helm naming
+convention makes it `<release-name>-argus-helm-chart-argus-mcp` unless that
+beamline's release set `fullnameOverride`. Confirm with
+`kubectl get svc -n <beamline-namespace> | grep argus-mcp` before adding an
+entry, don't assume the name above. This is a manually-maintained list, not
+automatic discovery - by design, matching the scope of this change.
+
+Also carries forward what `openwebui`'s `TOOL_SERVER_CONNECTIONS` already
+registered (`kubernetes-mcp`, `rag-mcp`) as `aiPlatform.librechat.mcpServers`
+entries, and points `llm.endpoints` at the already-deployed `litellm` gateway
+rather than duplicating a direct-to-vllm endpoint (`argus-helm-chart`'s own
+`vllmService` "facility-wide singleton" stays disabled, since this chart
+already has that singleton as `aiPlatform.vllm`).
+
+## What's a pre-existing oddity, reproduced not fixed
+
+Per the compatibility mandate, known inconsistencies on the live cluster are
+reproduced as-is rather than silently corrected:
+
+- `metallb-system` has two `L2Advertisement`s (`advert-valan-109` and `l2`) bound
+  to the same pool/selector - redundant, harmless.
+- `kube-prometheus-stack`'s live release has `nodeExporter.extraArgs` /
+  `hostNetwork` / `service.port(9200)` set as Helm values, but those keys are
+  actually inert for this chart version (the real subchart scoping key is
+  `prometheus-node-exporter:`, not `nodeExporter:` - the latter is only used for
+  the dependency's enable/disable condition). The live DaemonSet actually runs
+  on hostNetwork with the chart's default port 9100. This chart reproduces what's
+  **actually running** (port 9100), not what was attempted.
+- `embeddings`, `epics-mcp`, and `git-mcp` are currently `hashicorp/http-echo`
+  placeholders, not real backends.
+- The `eph-kafka` cluster has **two** `KafkaNodePool`s (`dual`, ephemeral storage
+  with no resource limits, and `eph-kafka-pool`, persistent + resourced) - looks
+  like a leftover from a migration between the two, reproduced as-is.
+- MongoDB has no auth enabled (`mongo.auth.enabled: false` live) and no
+  `NetworkPolicy` restricting access - reproduced as-is, not a new gap.
+
+## Secrets handling
+
+No Secret content is stored in this repo. Where a live Deployment consumes a
+Secret (grafana admin credentials, ai-platform API keys, confluence-ingester
+credentials), the chart references the **existing** Secret object by name
+(`existingSecret`, `secretKeyRef`) rather than creating or embedding one:
+
+- `grafana`: `admin.existingSecret: grafana` (keys `admin-user`/`admin-password`)
+  instead of the live release's literal `adminPassword` value.
+- ai-platform: `qdrant-secrets`, `confluence-ingester-secrets` are expected to
+  already exist in the `ai-platform` namespace; this chart does not create them.
+- Centralized LibreChat: `aiPlatform.librechat.*` never sets `secrets.data` -
+  real LLM API keys and any argus-mcp backend credentials must be supplied
+  out-of-band (e.g. `--set` on the generated Application, or a separate
+  untracked overlay), the same policy argus-helm-chart's own README documents.
+
+## Repo layout
+
+```
+Chart.yaml            # kube-prometheus-stack, grafana, eck-operator, strimzi-kafka-operator
+                       #   as Helm dependencies, pinned to the versions currently deployed
+values.yaml            # domain toggles + chart-level defaults
+values-k8sda.yaml       # this cluster's exact current state
+files/ai-platform/      # embedded script sources (mounted into ConfigMaps via .Files.Get)
+templates/
+  networking/           # values-driven: IPAddressPool, L2Advertisement, NAD
+  storage/               # values-driven: StorageClass
+  backend/                # Elasticsearch/Kibana CRs, Kafka+KafkaNodePool CRs, MongoDB
+  ai-platform/             # one file per component, values for the site-specific bits;
+                            #   librechat.yaml is the one exception that renders an
+                            #   ArgoCD Application instead of a raw manifest, see below
+```
+
+Monitoring and the ECK/Strimzi operators are modelled as Helm chart
+**dependencies** rather than bespoke templates, since they're large upstream
+charts - reinventing them would be pure risk for no benefit. Because this bundles
+formerly-independent Helm releases (`prometheus`, `grafana`) under one umbrella
+release, `fullnameOverride` is set explicitly (`kube-prometheus-stack`,
+`kube-state-metrics`, `prometheus-node-exporter`, `grafana` sub-blocks in
+`values-k8sda.yaml`) to reproduce the exact live resource names - without it,
+Helm's default naming would derive names from the umbrella release name instead
+and rename every resource.
+
+The Elasticsearch/Kibana/Kafka **CRs themselves** (not the operators) are raw
+templates in `templates/backend/`, built directly from live `kubectl get
+elasticsearch|kibana|kafka|kafkanodepool -o yaml` output - the actual
+`epik8s-backend` repo's checked-out branch (`main`) doesn't match what's
+deployed (live runs on branch `backend-operators`: ECK-managed Elasticsearch/
+Kibana and KRaft-mode Kafka, `main` has the classic `helm.elastic.co` chart
+approach and a ZooKeeper-based Kafka values block). MongoDB's raw manifests
+(Service + PVC + StatefulSet) *do* match `main` and were verified against live
+objects the same way.
+
+## What this is NOT
+
+This phase produces **config, not a cutover**. Nothing in this repo has been
+applied to the cluster, and no ArgoCD `Application` points at it. Wiring ArgoCD
+to actually manage/adopt these already-running resources is a separate,
+higher-risk step - `kubectl apply`/`helm upgrade --install` against objects an
+operator (prometheus-operator) or another ArgoCD app (`cephfs-config` for
+`cephfs-rwx`) already partially manages needs its own explicit review and is out
+of scope here.
+
+## Verification
+
+Every resource this chart renders was diffed against live cluster state as part
+of building it:
+
+- All 11 `NetworkAttachmentDefinition`s: `spec.config` string compared
+  **byte-for-byte** against `kubectl get network-attachment-definitions -A -o json`.
+- All 4 `StorageClass`es: `provisioner`/`reclaimPolicy`/`volumeBindingMode`/
+  `allowVolumeExpansion`/`mountOptions`/`parameters` compared field-by-field
+  against `kubectl get storageclass -o json`.
+- `IPAddressPool`/`L2Advertisement`: compared against
+  `kubectl get ipaddresspools,l2advertisements -n metallb-system -o yaml`.
+- Monitoring: resource names, grafana Deployment (image/env/volumes/init
+  containers), grafana Ingress, grafana PVC (`existingClaim: grafana-nfs`), and
+  Prometheus/node-exporter/kube-state-metrics Service ports compared against live
+  objects and `helm get values prometheus|grafana -n monitoring`.
+- ai-platform: all 44 rendered resources (9 Deployments, 9 Services, 4 Ingresses,
+  3 PVCs, 1 CronJob, 4 HPAs, 10 ConfigMaps, RBAC) compared field-by-field
+  (image, command/args, env wiring including `configMapKeyRef`/`secretKeyRef`
+  names, Service ports/selectors, Ingress rules/tls, PVC accessModes/
+  storageClassName/size, ConfigMap data, HPA replica bounds) against
+  `kubectl get deploy,svc,ingress,pvc,cronjob,hpa,cm -n ai-platform -o json` -
+  zero mismatches. The three embedded Python scripts
+  (`kubernetes-mcp-server.py`, `rag-mcp-server.py`, `confluence_ingest.py`) were
+  compared byte-for-byte against the live ConfigMap data.
+- backend: `Elasticsearch`, `Kibana`, `Kafka`, both `KafkaNodePool`s, and the
+  MongoDB `StatefulSet`/`Service`/`PersistentVolumeClaim` compared field-by-field
+  against `kubectl get elasticsearch,kibana,kafka,kafkanodepool,statefulset,
+  service,pvc -n backend -o json` - all match except fields the API server/ECK
+  webhook injects as defaults (empty sub-objects, `imagePullPolicy`, etc.), which
+  is expected and not something a manifest should specify.
+
+Centralized LibreChat is new capability, not codification - there's no live
+instance to diff against, so it was verified differently: the rendered
+Application's embedded Helm values were extracted and fed into
+`argus-helm-chart` directly (`helm template argus-helm-chart -f
+<extracted-values>`), confirming the whole LibreChat/MongoDB/Meilisearch stack
+renders, `argusMcp` stays disabled (deployed per-beamline separately, not by
+this Application), and - a real bug this caught - that `mcpServers` entries
+actually appear in the rendered `librechat.yaml` (argus-helm-chart's own
+template expects each entry to still carry `enabled`, since it does its own
+`omit`; an earlier version of `librechat.yaml` here stripped that field first,
+which silently dropped every entry). Also verified: `argus-helm-chart` renders
+byte-identical output for its existing example values before/after adding the
+`librechat.enabled` toggle (module random secret generation, expected across
+separate `helm template` runs), and that `--set librechat.enabled=false`
+renders ARGUS MCP's Deployment/Service/RBAC with no LibreChat/MongoDB/
+Meilisearch/ConfigMap and no orphaned Secret dependency.
+
+To re-verify after any change:
+
+```bash
+helm dependency build .
+helm template epik8s-platform . -f values-k8sda.yaml > /tmp/rendered.yaml
+# then diff relevant resources against:
+kubectl get ipaddresspools,l2advertisements -n metallb-system -o yaml
+kubectl get network-attachment-definitions -A -o yaml
+kubectl get storageclass <name> -o yaml
+kubectl get deploy,svc,ingress,pvc,cronjob,hpa,cm -n ai-platform -o yaml
+kubectl get deploy,svc -n monitoring -o yaml
+kubectl get elasticsearch,kibana,kafka,kafkanodepool,statefulset,svc,pvc -n backend -o yaml
+```
+
+No `helm install`, `kubectl apply`, or ArgoCD change was made to the live
+cluster while building this chart.

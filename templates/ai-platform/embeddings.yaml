@@ -1,0 +1,56 @@
+{{- if and .Values.aiPlatform.enabled .Values.aiPlatform.embeddings.enabled }}
+{{- $ns := .Values.aiPlatform.namespace }}
+{{- $v := .Values.aiPlatform.embeddings }}
+## NOTE: this is currently a placeholder (hashicorp/http-echo), not a real
+## embeddings backend, on the live cluster - reproduced as-is, see README.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: embeddings-config
+  namespace: {{ $ns }}
+data:
+  model-id: {{ $v.modelId | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: embeddings
+  namespace: {{ $ns }}
+  labels:
+    app: embeddings
+spec:
+  replicas: {{ $v.replicas }}
+  selector:
+    matchLabels:
+      app: embeddings
+  template:
+    metadata:
+      labels:
+        app: embeddings
+    spec:
+      containers:
+        - name: embeddings
+          image: {{ $v.image }}
+          args: ["-listen=:80", "-text=embeddings-placeholder"]
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          resources:
+            {{- toYaml $v.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: embeddings
+  namespace: {{ $ns }}
+spec:
+  type: ClusterIP
+  selector:
+    app: embeddings
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+{{- end }}

@@ -1,0 +1,58 @@
+{{- if and .Values.backend.enabled .Values.backend.elasticsearch.enabled }}
+{{- $ns := .Values.backend.namespace }}
+{{- $es := .Values.backend.elasticsearch }}
+apiVersion: elasticsearch.k8s.elastic.co/v1
+kind: Elasticsearch
+metadata:
+  name: elasticsearch
+  namespace: {{ $ns }}
+spec:
+  version: {{ $es.version | quote }}
+  nodeSets:
+    - name: default
+      count: {{ $es.nodeCount }}
+      config:
+        node.store.allow_mmap: false
+      podTemplate:
+        spec:
+          containers:
+            - name: elasticsearch
+              env:
+                - name: ES_JAVA_OPTS
+                  value: {{ $es.javaOpts | quote }}
+              resources:
+                {{- toYaml $es.resources | nindent 16 }}
+      volumeClaimTemplates:
+        - metadata:
+            name: elasticsearch-data
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: {{ $es.storageSize | quote }}
+{{- end }}
+{{- if and .Values.backend.enabled .Values.backend.kibana.enabled }}
+{{- $ns := .Values.backend.namespace }}
+{{- $kb := .Values.backend.kibana }}
+---
+apiVersion: kibana.k8s.elastic.co/v1
+kind: Kibana
+metadata:
+  name: kibana
+  namespace: {{ $ns }}
+spec:
+  version: {{ $kb.version | quote }}
+  count: 1
+  elasticsearchRef:
+    name: elasticsearch
+  http:
+    service:
+      spec:
+        type: ClusterIP
+  podTemplate:
+    spec:
+      containers:
+        - name: kibana
+          resources:
+            {{- toYaml $kb.resources | nindent 12 }}
+{{- end }}

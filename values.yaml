@@ -1,0 +1,340 @@
+## epik8s-platform default values.
+## Domain toggles + empty defaults. Site-specific data (IP pools, NAD subnets,
+## storage server addresses, monitoring hostnames, ...) belongs in an
+## environment values file such as values-k8sda.yaml - see README.md.
+
+networking:
+  enabled: true
+  metallb:
+    ## list of metallb.io/v1beta1 IPAddressPool specs: {name, addresses[], autoAssign, avoidBuggyIPs}
+    pools: []
+    ## list of metallb.io/v1beta1 L2Advertisement specs: {name, ipAddressPools[], nodeSelectors[]}
+    advertisements: []
+  ## list of k8s.cni.cncf.io/v1 NetworkAttachmentDefinitions: {name, namespace, config}
+  nads: []
+
+storage:
+  enabled: true
+  ## list of storage.k8s.io/v1 StorageClass specs:
+  ## {name, provisioner, reclaimPolicy, volumeBindingMode, allowVolumeExpansion, mountOptions[], parameters{}}
+  classes: []
+
+monitoring:
+  kubePrometheusStack:
+    enabled: true
+  grafana:
+    enabled: true
+
+## kube-prometheus-stack subchart values (dependency name: kube-prometheus-stack)
+kube-prometheus-stack: {}
+
+## grafana subchart values (dependency name: grafana)
+grafana: {}
+
+backend:
+  enabled: true
+  namespace: backend
+  eckOperator:
+    enabled: true
+  strimziOperator:
+    enabled: true
+
+  elasticsearch:
+    enabled: true
+    version: "8.15.0"
+    nodeCount: 1
+    javaOpts: "-Xms1g -Xmx1g"
+    storageSize: 50Gi
+    resources:
+      limits: { cpu: 2, memory: 4Gi }
+      requests: { cpu: 1, memory: 2Gi }
+
+  kibana:
+    enabled: true
+    version: "8.15.0"
+    resources:
+      limits: { cpu: 1, memory: 2Gi }
+      requests: { cpu: 500m, memory: 1Gi }
+
+  kafka:
+    enabled: true
+    clusterName: eph-kafka
+    version: "4.1.0"
+    metadataVersion: "4.1-IV1"
+    config:
+      default.replication.factor: 3
+      min.insync.replicas: 2
+      offsets.topic.replication.factor: 3
+      transaction.state.log.min.isr: 2
+      transaction.state.log.replication.factor: 3
+    ## external LoadBalancer listener - disabled by default (needs a real MetalLB
+    ## pool + IPs), see values-k8sda.yaml for the live config.
+    externalAccess:
+      enabled: false
+      bootstrapLoadBalancerIP: ""
+      brokers: [] ## list of {broker, loadBalancerIP}
+    ## list of Strimzi KafkaNodePool specs: {name, replicas, roles[], storage{}, resources{}}
+    nodePools:
+      - name: eph-kafka-pool
+        replicas: 3
+        roles: [controller, broker]
+        storage:
+          type: persistent-claim
+          size: 10Gi
+          deleteClaim: false
+        resources:
+          limits: { cpu: 2, memory: 4Gi }
+          requests: { cpu: 1, memory: 2Gi }
+
+  mongo:
+    enabled: true
+    replicaCount: 1
+    storageClassName: local-path
+    storageSize: 10Gi
+    resources:
+      limits: { cpu: "2", memory: 2Gi }
+      requests: { cpu: "1", memory: 1Gi }
+
+## eck-operator subchart values (dependency name: eck-operator)
+eck-operator:
+  managedNamespaces: []
+  installCRDs: true
+  webhook:
+    enabled: true
+    port: 9443
+  config:
+    logVerbosity: "0"
+    metricsPort: "0"
+    maxConcurrentReconciles: "3"
+  resources:
+    limits: { cpu: "5", memory: 4Gi }
+    requests: { cpu: "1", memory: 2Gi }
+
+## strimzi-kafka-operator subchart values (dependency name: strimzi-kafka-operator)
+strimzi-kafka-operator:
+  watchNamespaces:
+    - backend
+
+aiPlatform:
+  enabled: true
+  namespace: ai-platform
+
+  ## corporate proxy env vars injected into components that need outbound internet
+  ## access (model downloads, pip installs, external MCP calls). Disabled by default;
+  ## set per-environment (see values-k8sda.yaml) where a proxy is actually required.
+  proxy:
+    enabled: false
+    httpProxy: ""
+    httpsProxy: ""
+    noProxy: ""
+
+  ingress:
+    className: nginx
+    tlsSecretName: ai-platform-tls
+
+  vllm:
+    enabled: true
+    image: vllm/vllm-openai:v0.6.3
+    replicas: 1
+    modelName: Qwen/Qwen2.5-3B-Instruct
+    maxModelLen: "16384"
+    gpuMemoryUtilization: "0.92"
+    storageClassName: local-path
+    storageSize: 50Gi
+    resources:
+      requests: { cpu: "4", memory: 16Gi, nvidia.com/gpu: "1" }
+      limits: { cpu: "8", memory: 24Gi, nvidia.com/gpu: "1" }
+
+  litellm:
+    enabled: true
+    image: ghcr.io/berriai/litellm:main-stable
+    replicas: 2
+    resources:
+      requests: { cpu: 300m, memory: 512Mi }
+      limits: { cpu: "2", memory: 2Gi }
+    ingress:
+      enabled: false
+      host: ""
+    configYaml: |
+      model_list:
+        - model_name: llama3-8b
+          litellm_params:
+            model: openai/llama3-8b
+            api_base: http://vllm.ai-platform.svc.cluster.local:8000/v1
+            api_key: none
+      general_settings:
+        completion_model: llama3-8b
+
+  qdrant:
+    enabled: true
+    image: qdrant/qdrant:v1.12.4
+    replicas: 1
+    storageClassName: local-path
+    storageSize: 80Gi
+    resources:
+      requests: { cpu: "1", memory: 2Gi }
+      limits: { cpu: "4", memory: 8Gi }
+    ingress:
+      enabled: false
+      host: ""
+    configYaml: |
+      log_level: INFO
+      service:
+        max_request_size_mb: 32
+        max_workers: 4
+      storage:
+        on_disk_payload: true
+        optimizers:
+          indexing_threshold: 20000
+          max_segment_size_kb: 256000
+      cluster:
+        enabled: false
+
+  embeddings:
+    enabled: true
+    ## placeholder image until a real embeddings backend is deployed, see README.
+    image: hashicorp/http-echo:1.0.0
+    replicas: 2
+    modelId: BAAI/bge-small-en-v1.5
+    resources:
+      requests: { cpu: "1", memory: 1Gi }
+      limits: { cpu: "4", memory: 4Gi }
+
+  mcp:
+    enabled: true
+    embeddingsUrl: http://embeddings.ai-platform.svc.cluster.local:80
+    prometheusUrl: http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+    qdrantUrl: http://qdrant.ai-platform.svc.cluster.local:6333
+    ragDefaultCollection: confluence-docs
+    ## epics-mcp / git-mcp are placeholders (hashicorp/http-echo) until real MCP
+    ## backends are built, see README.
+    placeholders:
+      epics-mcp:
+        enabled: true
+        image: hashicorp/http-echo:1.0.0
+        replicas: 2
+        minReplicas: 2
+        maxReplicas: 10
+        resources:
+          requests: { cpu: 100m, memory: 128Mi }
+          limits: { cpu: "1", memory: 512Mi }
+      git-mcp:
+        enabled: true
+        image: hashicorp/http-echo:1.0.0
+        replicas: 2
+        minReplicas: 2
+        maxReplicas: 10
+        resources:
+          requests: { cpu: 100m, memory: 128Mi }
+          limits: { cpu: "1", memory: 512Mi }
+    kubernetesMcp:
+      enabled: true
+      image: python:3.11-slim
+      replicas: 2
+      minReplicas: 2
+      maxReplicas: 10
+      noProxy: "localhost,127.0.0.1,.svc,.cluster.local,10.0.0.0/8,192.168.0.0/16"
+      resources:
+        requests: { cpu: 250m, memory: 256Mi }
+        limits: { cpu: "2", memory: 1Gi }
+      ingress:
+        enabled: false
+        host: ""
+    ragMcp:
+      enabled: true
+      image: python:3.11-slim
+      replicas: 2
+      minReplicas: 2
+      maxReplicas: 10
+      noProxy: "localhost,127.0.0.1,.svc,.cluster.local,10.0.0.0/8,192.168.0.0/16"
+      resources:
+        requests: { cpu: 200m, memory: 256Mi }
+        limits: { cpu: "2", memory: 2Gi }
+
+  ## Centralized chat frontend, replacing the old per-component "openwebui" -
+  ## rendered as an ArgoCD Application sourcing argus-helm-chart's own repo
+  ## (not a raw manifest, not a native Helm dependency - see README.md
+  ## "Centralized LibreChat" for why).
+  librechat:
+    enabled: true
+    applicationName: epik8s-platform-librechat
+    project: default
+    repoURL: "" ## CHANGE ME: argus-helm-chart's repo, see README.md
+    targetRevision: main
+    ingress:
+      enabled: false
+      hosts:
+        - host: ""
+          paths:
+            - path: /
+              pathType: ImplementationSpecific
+    auth:
+      mode: basic
+      basic:
+        allowRegistration: true
+        allowPasswordReset: true
+        allowUnverifiedEmailLogin: false
+    ## reuses the already-deployed litellm gateway rather than duplicating a
+    ## direct-to-vllm endpoint - argus-helm-chart's own vllmService stays
+    ## disabled, since this chart already has that "facility-wide singleton"
+    ## (aiPlatform.vllm).
+    llmEndpoints:
+      - name: "LiteLLM Gateway"
+        apiKeySecretKey: "LITELLM_API_KEY"
+        baseURL: "http://litellm.ai-platform.svc.cluster.local:4000/v1"
+        models:
+          default: ["llama3-8b"]
+          fetch: true
+        titleConvo: true
+        modelDisplayLabel: "LiteLLM Gateway"
+    ## carries forward what openwebui's TOOL_SERVER_CONNECTIONS registered,
+    ## so replacing the frontend doesn't drop existing capability.
+    mcpServers:
+      kubernetes-mcp:
+        enabled: true
+        type: streamable-http
+        url: "http://kubernetes-mcp.ai-platform.svc.cluster.local:8080/mcp"
+        chatMenu: true
+        title: "Kubernetes Observability"
+        description: "Cluster health, pod issues, node pressure, namespace usage."
+      rag-mcp:
+        enabled: true
+        type: streamable-http
+        url: "http://rag-mcp.ai-platform.svc.cluster.local:8080/mcp"
+        chatMenu: true
+        title: "Confluence RAG"
+        description: "Search ingested Confluence chunks in Qdrant (LDCG by default)."
+    ## The "possibility to add argus MCP": one entry per beamline that has
+    ## deployed its own local argus-mcp server (via argus-helm-chart with
+    ## argusMcp.enabled, librechat.enabled: false) - registers it into this
+    ## central LibreChat instead of that beamline running its own LibreChat.
+    ## port defaults to 8000, path defaults to "/sse" (argus-mcp's fixed SSE
+    ## route - see argus-helm-chart/templates/librechat-configmap.yaml).
+    ## serviceName is NOT simply "argus-mcp": argus-helm-chart's Helm naming
+    ## convention makes it "<release-name>-argus-helm-chart-argus-mcp" unless
+    ## that release set fullnameOverride - confirm with
+    ## `kubectl get svc -n <beamline-namespace> | grep argus-mcp` before
+    ## adding an entry here, don't assume.
+    ## {name, namespace, serviceName, port, path, title, description}
+    argusMcpServers: []
+
+  confluenceIngester:
+    enabled: true
+    image: python:3.11-slim
+    schedule: "0 */6 * * *"
+    suspend: false
+    noProxy: "localhost,127.0.0.1,.svc,.cluster.local,10.0.0.0/8,192.168.0.0/16"
+    baseUrl: ""
+    authType: bearer
+    spaces: ""
+    pageLimit: "50"
+    sinceDays: "30"
+    qdrantUrl: http://qdrant.ai-platform.svc.cluster.local:6333
+    qdrantCollection: confluence-docs
+    embeddingMode: auto
+    embeddingsUrl: http://litellm.ai-platform.svc.cluster.local:4000/v1/embeddings
+    embeddingsModel: text-embedding-3-small
+    hashVectorSize: "384"
+    chunkSize: "1100"
+    chunkOverlap: "150"
+    requestTimeoutSeconds: "30"

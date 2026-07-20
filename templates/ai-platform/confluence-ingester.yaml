@@ -1,0 +1,110 @@
+{{- if and .Values.aiPlatform.enabled .Values.aiPlatform.confluenceIngester.enabled }}
+{{- $ns := .Values.aiPlatform.namespace }}
+{{- $v := .Values.aiPlatform.confluenceIngester }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: confluence-ingester-config
+  namespace: {{ $ns }}
+data:
+  confluence-base-url: {{ $v.baseUrl | quote }}
+  confluence-auth-type: {{ $v.authType | quote }}
+  confluence-spaces: {{ $v.spaces | quote }}
+  confluence-page-limit: {{ $v.pageLimit | quote }}
+  confluence-since-days: {{ $v.sinceDays | quote }}
+  qdrant-url: {{ $v.qdrantUrl | quote }}
+  qdrant-collection: {{ $v.qdrantCollection | quote }}
+  embedding-mode: {{ $v.embeddingMode | quote }}
+  embeddings-url: {{ $v.embeddingsUrl | quote }}
+  embeddings-model: {{ $v.embeddingsModel | quote }}
+  hash-vector-size: {{ $v.hashVectorSize | quote }}
+  chunk-size: {{ $v.chunkSize | quote }}
+  chunk-overlap: {{ $v.chunkOverlap | quote }}
+  request-timeout-seconds: {{ $v.requestTimeoutSeconds | quote }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: confluence-ingester-script
+  namespace: {{ $ns }}
+data:
+  confluence_ingest.py: |
+{{ .Files.Get "files/ai-platform/confluence_ingest.py" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: confluence-ingester
+  namespace: {{ $ns }}
+spec:
+  schedule: {{ $v.schedule | quote }}
+  concurrencyPolicy: Allow
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 5
+  suspend: {{ $v.suspend }}
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: confluence-ingester
+              image: {{ $v.image }}
+              command: ["sh", "-lc"]
+              args: ["pip install --no-cache-dir requests beautifulsoup4 && python /app/confluence_ingest.py"]
+              env:
+                - name: CONFLUENCE_BASE_URL
+                  valueFrom: { configMapKeyRef: { name: confluence-ingester-config, key: confluence-base-url } }
+                - name: CONFLUENCE_AUTH_TYPE
+                  valueFrom: { configMapKeyRef: { name: confluence-ingester-config, key: confluence-auth-type } }
+                - name: CONFLUENCE_SPACES
+                  valueFrom: { configMapKeyRef: { name: confluence-ingester-config, key: confluence-spaces } }
+                - name: CONFLUENCE_PAGE_LIMIT
+                  valueFrom: { configMapKeyRef: { name: confluence-ingester-config, key: confluence-page-limit } }
+                - name: CONFLUENCE_SINCE_DAYS
+                  valueFrom: { configMapKeyRef: { name: confluence-ingester-config, key: confluence-since-days } }
+                - name: CONFLUENCE_EMAIL
+                  valueFrom: { secretKeyRef: { name: confluence-ingester-secrets, key: confluence-email } }
+                - name: CONFLUENCE_API_TOKEN
+                  valueFrom: { secretKeyRef: { name: confluence-ingester-secrets, key: confluence-api-token } }
+                - name: CONFLUENCE_PAT
+                  valueFrom: { secretKeyRef: { name: confluence-ingester-secrets, key: confluence-pat } }
+                - name: QDRANT_URL
+                  valueFrom: { configMapKeyRef: { name: confluence-ingester-config, key: qdrant-url } }
+                - name: QDRANT_COLLECTION
+                  valueFrom: { configMapKeyRef: { name: confluence-ingester-config, key: qdrant-collection } }
+                - name: QDRANT_API_KEY
+                  valueFrom: { secretKeyRef: { name: confluence-ingester-secrets, key: qdrant-api-key } }
+                - name: EMBEDDING_MODE
+                  valueFrom: { configMapKeyRef: { name: confluence-ingester-config, key: embedding-mode } }
+                - name: EMBEDDINGS_URL
+                  valueFrom: { configMapKeyRef: { name: confluence-ingester-config, key: embeddings-url } }
+                - name: EMBEDDINGS_MODEL
+                  valueFrom: { configMapKeyRef: { name: confluence-ingester-config, key: embeddings-model } }
+                - name: HASH_VECTOR_SIZE
+                  valueFrom: { configMapKeyRef: { name: confluence-ingester-config, key: hash-vector-size } }
+                - name: EMBEDDINGS_API_KEY
+                  valueFrom: { secretKeyRef: { name: confluence-ingester-secrets, key: embeddings-api-key } }
+                - name: CHUNK_SIZE
+                  valueFrom: { configMapKeyRef: { name: confluence-ingester-config, key: chunk-size } }
+                - name: CHUNK_OVERLAP
+                  valueFrom: { configMapKeyRef: { name: confluence-ingester-config, key: chunk-overlap } }
+                - name: REQUEST_TIMEOUT_SECONDS
+                  valueFrom: { configMapKeyRef: { name: confluence-ingester-config, key: request-timeout-seconds } }
+                {{- if $.Values.aiPlatform.proxy.enabled }}
+                - name: HTTP_PROXY
+                  value: {{ $.Values.aiPlatform.proxy.httpProxy }}
+                - name: HTTPS_PROXY
+                  value: {{ $.Values.aiPlatform.proxy.httpsProxy }}
+                - name: NO_PROXY
+                  value: {{ $v.noProxy }}
+                {{- end }}
+              volumeMounts:
+                - name: script
+                  mountPath: /app/confluence_ingest.py
+                  subPath: confluence_ingest.py
+          volumes:
+            - name: script
+              configMap:
+                name: confluence-ingester-script
+{{- end }}

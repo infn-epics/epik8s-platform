@@ -1,0 +1,61 @@
+{{- if and .Values.backend.enabled .Values.backend.kafka.enabled }}
+{{- $ns := .Values.backend.namespace }}
+{{- $k := .Values.backend.kafka }}
+apiVersion: kafka.strimzi.io/v1beta2
+kind: Kafka
+metadata:
+  name: {{ $k.clusterName }}
+  namespace: {{ $ns }}
+  annotations:
+    strimzi.io/node-pools: enabled
+    strimzi.io/kraft: enabled
+spec:
+  kafka:
+    version: {{ $k.version | quote }}
+    metadataVersion: {{ $k.metadataVersion | quote }}
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+      {{- if $k.externalAccess.enabled }}
+      - name: external
+        port: 9094
+        type: loadbalancer
+        tls: false
+        configuration:
+          bootstrap:
+            loadBalancerIP: {{ $k.externalAccess.bootstrapLoadBalancerIP | quote }}
+          brokers:
+            {{- range $k.externalAccess.brokers }}
+            - broker: {{ .broker }}
+              loadBalancerIP: {{ .loadBalancerIP | quote }}
+            {{- end }}
+      {{- end }}
+    config:
+      {{- toYaml $k.config | nindent 6 }}
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}
+---
+{{- range $k.nodePools }}
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaNodePool
+metadata:
+  name: {{ .name }}
+  namespace: {{ $ns }}
+  labels:
+    strimzi.io/cluster: {{ $k.clusterName }}
+spec:
+  replicas: {{ .replicas }}
+  roles:
+    {{- toYaml .roles | nindent 4 }}
+  storage:
+    {{- toYaml .storage | nindent 4 }}
+  {{- if .resources }}
+  resources:
+    {{- toYaml .resources | nindent 4 }}
+  {{- end }}
+---
+{{- end }}
+{{- end }}

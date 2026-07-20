@@ -1,0 +1,67 @@
+{{- /*
+Centralized LibreChat, replacing the old per-component "openwebui" - see
+README.md "Centralized LibreChat" for why this is an ArgoCD Application
+(sourcing argus-helm-chart's own repo) rather than a raw manifest or a native
+Helm dependency like the rest of this chart. This is the one place in
+epik8s-platform that assumes ArgoCD at runtime.
+*/ -}}
+{{- if and .Values.aiPlatform.enabled .Values.aiPlatform.librechat.enabled }}
+{{- $ns := .Values.aiPlatform.namespace }}
+{{- $lc := .Values.aiPlatform.librechat }}
+{{- /*
+argus-helm-chart's own librechat-configmap.yaml expects each mcpServers.*
+entry to still carry "enabled" (it does its own `if $server.enabled` +
+`omit $server "enabled"`) - do NOT pre-strip it here, or every entry
+silently disappears from the rendered librechat.yaml.
+*/ -}}
+{{- $mcpServers := deepCopy $lc.mcpServers }}
+{{- range $lc.argusMcpServers }}
+{{- $_ := set $mcpServers .name (dict
+      "enabled" true
+      "type" "sse"
+      "url" (printf "http://%s.%s.svc.cluster.local:%v%s" .serviceName .namespace (.port | default 8000) (.path | default "/sse"))
+      "chatMenu" true
+      "title" (.title | default .name)
+      "description" (.description | default (printf "ARGUS accelerator-control assistant for %s." .name))
+    ) }}
+{{- end }}
+{{- $argusHelmValues := dict
+      "librechat" (dict
+        "enabled" true
+        "ingress" $lc.ingress
+      )
+      "llm" (dict "endpoints" $lc.llmEndpoints)
+      "mcpServers" $mcpServers
+      "argusMcp" (dict "enabled" false)
+      "vllmService" (dict "enabled" false)
+      "auth" $lc.auth
+      "secrets" (dict "create" true "data" (dict))
+}}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ $lc.applicationName }}
+  namespace: argocd
+  labels:
+    deploy: ai-platform
+    app: librechat
+spec:
+  project: {{ $lc.project }}
+  source:
+    repoURL: {{ $lc.repoURL | quote }}
+    path: .
+    targetRevision: {{ $lc.targetRevision }}
+    helm:
+      values: |
+{{ toYaml $argusHelmValues | indent 8 }}
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: {{ $ns }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - Prune=true
+{{- end }}

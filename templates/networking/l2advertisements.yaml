@@ -1,0 +1,24 @@
+{{- if .Values.networking.enabled }}
+{{- range .Values.networking.metallb.advertisements }}
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: {{ .name }}
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+{{- range .ipAddressPools }}
+    - {{ . }}
+{{- end }}
+{{- if .nodeSelectors }}
+  nodeSelectors:
+{{- range .nodeSelectors }}
+    - matchLabels:
+{{- range $k, $v := .matchLabels }}
+        {{ $k }}: {{ $v }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

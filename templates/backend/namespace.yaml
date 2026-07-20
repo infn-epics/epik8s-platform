@@ -1,0 +1,8 @@
+{{- if .Values.backend.enabled }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.backend.namespace }}
+  labels:
+    app.kubernetes.io/part-of: epik8s-backend
+{{- end }}

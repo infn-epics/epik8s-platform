@@ -1,0 +1,15 @@
+dependencies:
+- name: kube-prometheus-stack
+  repository: https://prometheus-community.github.io/helm-charts
+  version: 77.8.0
+- name: grafana
+  repository: https://grafana.github.io/helm-charts
+  version: 10.3.0
+- name: eck-operator
+  repository: https://helm.elastic.co
+  version: 3.2.0
+- name: strimzi-kafka-operator
+  repository: https://strimzi.io/charts/
+  version: 0.48.0
+digest: sha256:5d50001d49d17ad22c4f952ddc7f6c1f51b05c5ed93936235620ad9e32a102da
+generated: "2026-07-20T13:52:16.149821+02:00"

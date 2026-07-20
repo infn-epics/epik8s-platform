@@ -1,0 +1,105 @@
+## Generic environment values for a scratch/test Kubernetes cluster - used by
+## epik8s-test-cloud-infra to validate that the platform + a real beamline
+## (epik8s-dt) can be stood up somewhere that isn't k8sda.
+##
+## Unlike values-k8sda.yaml, this is NOT a reproduction of anything live - there
+## is no "generic cloud" to diff against. It exists to prove the pipeline works
+## structurally: replace the placeholder network/IP values below with whatever
+## your scratch cluster actually has, per the "Prerequisites" table in README.md.
+##
+## Design choices made here, see README.md "Generic profile" for the reasoning:
+## - No Ingress anywhere (a scratch cluster may not have ingress-nginx or DNS
+##   set up) - reach services via `kubectl port-forward` instead.
+## - No proxy env vars, no VLAN-specific NADs - one generic macvlan NAD.
+## - Storage domain disabled - rely on the cluster's default StorageClass
+##   (e.g. local-path, ships by default on k3s/RKE2/kind).
+## - vllm disabled by default (needs a GPU node) and confluence-ingester
+##   disabled (needs a real Confluence instance/credentials) - both opt-in.
+## - Smaller resource footprint throughout (fewer replicas, smaller PVCs/heaps)
+##   since this is a test cluster, not production capacity.
+
+networking:
+  enabled: true
+  metallb:
+    pools:
+      ## CHANGE ME: use an address range that's actually free on your LAN.
+      - name: generic-pool
+        addresses:
+          - 203.0.113.240-203.0.113.250
+        autoAssign: true
+        avoidBuggyIPs: false
+    advertisements:
+      - name: generic-pool-l2
+        ipAddressPools:
+          - generic-pool
+        ## no nodeSelectors -> all nodes eligible (k8sda's VLAN node-label
+        ## scheme doesn't apply here)
+  nads:
+    ## CHANGE ME: "master" must be a real interface name on your nodes.
+    - name: generic-macvlan
+      namespace: default
+      config: |
+        { "cniVersion": "0.3.1", "type": "macvlan", "master": "eth0", "mode": "bridge", "ipam": { "type": "host-local", "subnet": "203.0.113.0/24", "rangeStart": "203.0.113.100", "rangeEnd": "203.0.113.200" } }
+
+storage:
+  enabled: false ## rely on the cluster's default StorageClass
+
+kube-prometheus-stack: {} ## chart defaults, no site overrides
+
+grafana:
+  ## no admin.existingSecret - let the chart generate its own on a fresh cluster
+  persistence:
+    enabled: true
+    size: 5Gi
+  ingress:
+    enabled: false
+
+backend:
+  enabled: true
+  elasticsearch:
+    nodeCount: 1
+    storageSize: 5Gi
+  kafka:
+    externalAccess:
+      enabled: false ## internal listener only - no static IPs assumed
+    nodePools:
+      - name: generic-pool
+        replicas: 1
+        roles: [controller, broker]
+        storage:
+          type: ephemeral
+  mongo:
+    storageClassName: "" ## empty -> cluster default StorageClass
+
+aiPlatform:
+  enabled: true
+  proxy:
+    enabled: false
+  ingress:
+    className: ""
+    tlsSecretName: ""
+  vllm:
+    ## disabled by default - needs a GPU node (nvidia.com/gpu.present label +
+    ## device plugin). Set enabled: true if your scratch cluster has one.
+    enabled: false
+  litellm:
+    ingress:
+      enabled: false
+  qdrant:
+    storageClassName: ""
+    ingress:
+      enabled: false
+  ## disabled by default - it's an ArgoCD Application sourcing a second repo
+  ## (argus-helm-chart), which adds prerequisites (ArgoCD, that repo pushed
+  ## somewhere) beyond what a "prove the platform+beamline pipeline renders"
+  ## scratch-cluster test needs. Set enabled: true and fill in repoURL to
+  ## exercise it too.
+  librechat:
+    enabled: false
+  mcp:
+    kubernetesMcp:
+      ingress:
+        enabled: false
+  confluenceIngester:
+    ## disabled by default - needs a real Confluence instance/credentials.
+    enabled: false

@@ -1,0 +1,12 @@
+{{- if .Values.networking.enabled }}
+{{- range .Values.networking.nads }}
+---
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: {{ .name }}
+  namespace: {{ .namespace }}
+spec:
+  config: {{ .config | quote }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,23 @@
+apiVersion: v2
+name: epik8s-platform
+description: >
+  EPIK8S platform layer - site-specific networking, storage, monitoring, backend
+  and AI-platform configuration, kept separate from beamline (epik8s-chart) charts.
+version: 0.1.0
+dependencies:
+  - name: kube-prometheus-stack
+    version: "77.8.0"
+    repository: "https://prometheus-community.github.io/helm-charts"
+    condition: monitoring.kubePrometheusStack.enabled
+  - name: grafana
+    version: "10.3.0"
+    repository: "https://grafana.github.io/helm-charts"
+    condition: monitoring.grafana.enabled
+  - name: eck-operator
+    version: "3.2.0"
+    repository: "https://helm.elastic.co"
+    condition: backend.eckOperator.enabled
+  - name: strimzi-kafka-operator
+    version: "0.48.0"
+    repository: "https://strimzi.io/charts/"
+    condition: backend.strimziOperator.enabled
