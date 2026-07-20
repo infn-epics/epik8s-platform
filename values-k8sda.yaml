@@ -484,7 +484,7 @@ aiPlatform:
     ingress:
       enabled: true
       hosts:
-        - host: llm-ui.k8sda.lnf.infn.it
+        - host: argus.k8sda.lnf.infn.it
           paths:
             - path: /
               pathType: ImplementationSpecific
@@ -506,8 +506,7 @@ aiPlatform:
         title: "EUAPS ARGUS"
         description: "ARGUS accelerator-control assistant for the EUAPS beamline."
       ## btf keeps running its OWN dedicated LibreChat too (2 BTF-specific
-      ## AI-Gateway LLM endpoints + RAGFLOW-backed documentation search that
-      ## the central instance doesn't have) - epik8s-btf/deploy/values.yaml is
+      ## AI-Gateway LLM endpoints) - epik8s-btf/deploy/values.yaml is
       ## untouched. This just makes the same already-running argus-mcp also
       ## reachable from the central LibreChat.
       - name: btf-argus
@@ -515,6 +514,14 @@ aiPlatform:
         serviceName: argus-argus-helm-chart-argus-mcp
         title: "BTF ARGUS"
         description: "ARGUS accelerator-control assistant for the BTF beamline."
+
+    ## same RAGFLOW instance BTF's own argus already uses
+    ## (epik8s-btf/deploy/values.yaml epicsConfiguration.services.argus.argusMcp.backends.ragflow).
+    argusMcp:
+      enabled: true
+      backends:
+        ragflow:
+          baseUrl: "https://ragflow-api-lnf.131.154.99.90.myip.cloud.infn.it"
 
   confluenceIngester:
     baseUrl: https://confluence.infn.it

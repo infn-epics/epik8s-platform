@@ -26,6 +26,10 @@ spec:
     metadata:
       labels:
         app: litellm
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "4000"
+        prometheus.io/path: /metrics
     spec:
       containers:
         - name: litellm
@@ -40,6 +44,16 @@ spec:
               value: "INFO"
             - name: STORE_MODEL_IN_DB
               value: "False"
+          livenessProbe:
+            httpGet:
+              path: /health/liveliness
+              port: http
+            initialDelaySeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health/readiness
+              port: http
+            initialDelaySeconds: 15
           resources:
             {{- toYaml $v.resources | nindent 12 }}
           volumeMounts:

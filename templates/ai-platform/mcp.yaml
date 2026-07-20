@@ -37,7 +37,7 @@ spec:
         app: {{ $name }}
     spec:
       containers:
-        - name: {{ $name }}
+        - name: server
           image: {{ $c.image }}
           args: ["-listen=:8080", "-text={{ $name }}-ok"]
           ports:
@@ -152,10 +152,14 @@ spec:
     metadata:
       labels:
         app: kubernetes-mcp
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
     spec:
       serviceAccountName: kubernetes-mcp
       containers:
-        - name: kubernetes-mcp
+        - name: server
           image: {{ $v.image }}
           command: ["sh", "-lc"]
           args: ["pip install --no-cache-dir fastmcp kubernetes requests && python /app/server.py"]
@@ -179,6 +183,22 @@ spec:
             - name: NO_PROXY
               value: {{ $v.noProxy }}
             {{- end }}
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          startupProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 60
           resources:
             {{- toYaml $v.resources | nindent 12 }}
           volumeMounts:
@@ -204,6 +224,10 @@ spec:
       port: 8080
       targetPort: http
       protocol: TCP
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -275,9 +299,13 @@ spec:
     metadata:
       labels:
         app: rag-mcp
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
     spec:
       containers:
-        - name: rag-mcp
+        - name: server
           image: {{ $v.image }}
           command: ["sh", "-lc"]
           args: ["pip install --no-cache-dir fastmcp requests && python /app/server.py"]
@@ -338,6 +366,10 @@ spec:
       port: 8080
       targetPort: http
       protocol: TCP
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler

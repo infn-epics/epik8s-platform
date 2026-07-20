@@ -44,11 +44,12 @@ spec:
   suspend: {{ $v.suspend }}
   jobTemplate:
     spec:
+      backoffLimit: 2
       template:
         spec:
           restartPolicy: OnFailure
           containers:
-            - name: confluence-ingester
+            - name: ingester
               image: {{ $v.image }}
               command: ["sh", "-lc"]
               args: ["pip install --no-cache-dir requests beautifulsoup4 && python /app/confluence_ingest.py"]

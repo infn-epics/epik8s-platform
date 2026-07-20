@@ -263,6 +263,7 @@ aiPlatform:
     targetRevision: main
     ingress:
       enabled: false
+      className: nginx
       hosts:
         - host: ""
           paths:
@@ -317,6 +318,25 @@ aiPlatform:
     ## adding an entry here, don't assume.
     ## {name, namespace, serviceName, port, path, title, description}
     argusMcpServers: []
+
+    ## A lean argus-mcp instance dedicated to THIS LibreChat (not any one
+    ## beamline) - only for backends that make sense centrally, e.g. RAGFLOW
+    ## documentation search. Reuses the same server-to-server integration
+    ## BTF's own argus already uses (epik8s-btf/deploy/values.yaml) rather
+    ## than the generic mcpServers bridge pattern, which that same beamline's
+    ## docs note was tried and abandoned over SSRF/JWT issues - see
+    ## argus-helm-chart/docs/architecture.md "ARGUS backend config vs. the
+    ## mcpServers.argus entry". Disabled by default (site-specific).
+    argusMcp:
+      enabled: false
+      image:
+        repository: ghcr.io/infn-epics/argus-mcp-server
+        tag: latest
+      backends:
+        documentation:
+          backend: ragflow
+        ragflow:
+          baseUrl: ""
 
   confluenceIngester:
     enabled: true

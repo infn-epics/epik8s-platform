@@ -32,7 +32,7 @@ silently disappears from the rendered librechat.yaml.
       )
       "llm" (dict "endpoints" $lc.llmEndpoints)
       "mcpServers" $mcpServers
-      "argusMcp" (dict "enabled" false)
+      "argusMcp" $lc.argusMcp
       "vllmService" (dict "enabled" false)
       "auth" $lc.auth
       "secrets" (dict "create" true "data" (dict))
