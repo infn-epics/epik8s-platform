@@ -25,11 +25,141 @@ monitoring:
   grafana:
     enabled: true
 
+logging:
+  ## Loki + Alloy for pod log troubleshooting - deliberately NOT the same
+  ## Elasticsearch used under backend.* for olog/saverestore/channelfinder, which
+  ## is genuinely control-critical (millions of live ChannelFinder docs) and
+  ## shouldn't share resources with high-volume pod log ingestion. See README.md
+  ## "Centralized logging".
+  loki:
+    enabled: true
+  alloy:
+    enabled: true
+
 ## kube-prometheus-stack subchart values (dependency name: kube-prometheus-stack)
 kube-prometheus-stack: {}
 
 ## grafana subchart values (dependency name: grafana)
 grafana: {}
+
+## loki subchart values (dependency name: loki) - single-binary, filesystem storage,
+## no object storage (S3/GCS/MinIO) - matches this cluster's scale, avoids standing
+## up a whole extra storage backend just for a 7-day log retention window.
+loki:
+  deploymentMode: SingleBinary
+  loki:
+    auth_enabled: false
+    commonConfig:
+      replication_factor: 1
+    storage:
+      type: filesystem
+    schemaConfig:
+      configs:
+        - from: "2024-01-01"
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+    limits_config:
+      retention_period: 168h # 7 days - disposable troubleshooting data
+      reject_old_samples: true
+      reject_old_samples_max_age: 168h
+    compactor:
+      retention_enabled: true
+      delete_request_store: filesystem
+  singleBinary:
+    replicas: 1
+    persistence:
+      enabled: true
+      size: 10Gi
+  # SingleBinary mode doesn't need the scalable-mode read/write/backend targets or
+  # object-storage-only minio - explicitly off rather than relying on chart defaults.
+  read:
+    replicas: 0
+  write:
+    replicas: 0
+  backend:
+    replicas: 0
+  minio:
+    enabled: false
+  test:
+    enabled: false
+  lokiCanary:
+    enabled: false
+  # Memcached-backed query caches - a performance optimization, not required for
+  # correctness at this scale. Off by default to keep the footprint minimal; turn
+  # on if query latency ever becomes a real problem.
+  chunksCache:
+    enabled: false
+  resultsCache:
+    enabled: false
+
+## alloy subchart values (dependency name: alloy) - DaemonSet, ships every pod's logs
+## to Loki via the Kubernetes API (loki.source.kubernetes), not hostPath log tailing.
+## NOTE the double nesting: the chart dependency is named "alloy" (outer key, scopes
+## everything below to that subchart), and the chart's OWN values.yaml separately has
+## an internal top-level key ALSO called "alloy:" wrapping configMap/stabilityLevel -
+## "rbac:" is a sibling of that inner key, not nested inside it. Easy to get wrong
+## (this file did, initially) - verify with `helm template --show-only
+## charts/alloy/templates/configmap.yaml` if this is ever restructured.
+alloy:
+  alloy:
+    configMap:
+      create: true
+      content: |
+        discovery.kubernetes "pods" {
+          role = "pod"
+        }
+
+        discovery.relabel "pod_logs" {
+          targets = discovery.kubernetes.pods.targets
+
+          rule {
+            source_labels = ["__meta_kubernetes_namespace"]
+            target_label  = "namespace"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_pod_name"]
+            target_label  = "pod"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_pod_container_name"]
+            target_label  = "container"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_pod_label_app"]
+            target_label  = "app"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_pod_container_name"]
+            separator     = "/"
+            target_label  = "job"
+          }
+        }
+
+        loki.source.kubernetes "pod_logs" {
+          targets    = discovery.relabel.pod_logs.output
+          forward_to = [loki.write.default.receiver]
+        }
+
+        loki.write "default" {
+          endpoint {
+            ## CHANGE ME per environment: the Loki single-binary Service's in-cluster
+            ## DNS name, tied to whatever Helm release name epik8s-platform is
+            ## installed as (confirmed by rendering: release "epik8s-platform" ->
+            ## Service "epik8s-platform-loki" - see values-k8sda.yaml/values-generic.yaml).
+            url = "http://loki.invalid.example/loki/api/v1/push"
+          }
+        }
+    stabilityLevel: "generally-available"
+  rbac:
+    create: true
+    clusterRules:
+      - apiGroups: [""]
+        resources: ["pods", "pods/log", "namespaces", "nodes"]
+        verbs: ["get", "list", "watch"]
 
 backend:
   enabled: true

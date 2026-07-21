@@ -25,11 +25,22 @@ silently disappears from the rendered librechat.yaml.
       "description" (.description | default (printf "ARGUS accelerator-control assistant for %s." .name))
     ) }}
 {{- end }}
+{{- /*
+LibreChat's own outbound calls (e.g. to external AI-Gateway LLM endpoints) need
+the corporate proxy, same as BTF's own argus release already sets via
+librechat.librechat.configEnv - without it, requests to external baseURLs just
+hang (no route without squid), not error out. See README.md.
+*/ -}}
+{{- $librechatSub := dict "enabled" true "ingress" $lc.ingress }}
+{{- if $.Values.aiPlatform.proxy.enabled }}
+{{- $_ := set $librechatSub "librechat" (dict "configEnv" (dict
+      "HTTP_PROXY" $.Values.aiPlatform.proxy.httpProxy
+      "HTTPS_PROXY" $.Values.aiPlatform.proxy.httpsProxy
+      "NO_PROXY" $.Values.aiPlatform.proxy.noProxy
+    )) }}
+{{- end }}
 {{- $argusHelmValues := dict
-      "librechat" (dict
-        "enabled" true
-        "ingress" $lc.ingress
-      )
+      "librechat" $librechatSub
       "llm" (dict "endpoints" $lc.llmEndpoints)
       "mcpServers" $mcpServers
       "argusMcp" $lc.argusMcp

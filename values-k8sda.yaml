@@ -304,6 +304,62 @@ monitoring:
   grafana:
     enabled: true
 
+logging:
+  loki:
+    enabled: true
+  alloy:
+    enabled: true
+
+## alloy subchart values override - real in-cluster DNS name for the Loki
+## single-binary Service, assuming this chart is deployed with release name
+## "epik8s-platform" into a "logging" namespace (confirmed by rendering, see
+## README.md "Centralized logging" for how to re-derive this if either changes).
+## NOTE the double "alloy: alloy:" nesting - see the comment in values.yaml.
+alloy:
+  alloy:
+    configMap:
+      content: |
+        discovery.kubernetes "pods" {
+          role = "pod"
+        }
+
+        discovery.relabel "pod_logs" {
+          targets = discovery.kubernetes.pods.targets
+
+          rule {
+            source_labels = ["__meta_kubernetes_namespace"]
+            target_label  = "namespace"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_pod_name"]
+            target_label  = "pod"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_pod_container_name"]
+            target_label  = "container"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_pod_label_app"]
+            target_label  = "app"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_pod_container_name"]
+            separator     = "/"
+            target_label  = "job"
+          }
+        }
+
+        loki.source.kubernetes "pod_logs" {
+          targets    = discovery.relabel.pod_logs.output
+          forward_to = [loki.write.default.receiver]
+        }
+
+        loki.write "default" {
+          endpoint {
+            url = "http://epik8s-platform-loki.logging.svc.cluster.local:3100/loki/api/v1/push"
+          }
+        }
+
 ## kube-prometheus-stack subchart values, reconciled against the live "prometheus"
 ## helm release. NOTE: `helm get values` initially reported nodeExporter.extraArgs /
 ## hostNetwork / service.port(9200) as "user-supplied", but kube-prometheus-stack's
@@ -367,6 +423,12 @@ grafana:
           access: proxy
           url: http://archiver.sparc.svc.cluster.local:17665
           isDefault: true
+        - name: Loki
+          type: loki
+          access: proxy
+          ## same "epik8s-platform" release name / "logging" namespace assumption as
+          ## the alloy: block above - see README.md "Centralized logging".
+          url: http://epik8s-platform-loki.logging.svc.cluster.local:3100
   env:
     GF_SERVER_ROOT_URL: https://grafana.k8sda.lnf.infn.it
   grafana.ini:
@@ -488,6 +550,35 @@ aiPlatform:
           paths:
             - path: /
               pathType: ImplementationSpecific
+    ## AI-Gateway-WP6/90 are the same two INFN AI Gateway instances BTF's own
+    ## argus already uses (epik8-btf... epik8s-btf/deploy/values.yaml
+    ## epicsConfiguration.services.argus.llm.endpoints) - reused here as-is, not
+    ## reinvented. Credentials for all three (including LiteLLM Gateway's own
+    ## master key) live only in the argus-librechat-credentials Secret, never
+    ## in this file - see README.md "Secrets handling".
+    llmEndpoints:
+      - name: "LiteLLM Gateway"
+        apiKeySecretKey: "LITELLM_API_KEY"
+        baseURL: "http://litellm.ai-platform.svc.cluster.local:4000/v1"
+        models:
+          default: ["llama3-8b"]
+          fetch: true
+        titleConvo: true
+        modelDisplayLabel: "LiteLLM Gateway"
+      - name: "AI-Gateway-WP6"
+        apiKeySecretKey: "AIGW_WP6_API_KEY"
+        baseURL: "https://ai-gateway.131.154.99.68.myip.cloud.infn.it/v1"
+        models:
+          default: ["qwen36-27b"]
+          fetch: false
+        modelDisplayLabel: "AI-Gateway-WP6"
+      - name: "AI-Gateway-90"
+        apiKeySecretKey: "AIGW_90_API_KEY"
+        baseURL: "https://ai-gateway.131.154.99.90.myip.cloud.infn.it/v1"
+        models:
+          default: ["qwen36-27b", "gemma-4-31b-it", "qwen35-122b-a10b-gptq-int4"]
+          fetch: false
+        modelDisplayLabel: "AI-Gateway-90"
     ## serviceName confirmed by rendering each beamline's computed argus values
     ## through argus-helm-chart directly (helm's naming convention for release
     ## name "argus" + chart name "argus-helm-chart", not simply "argus-mcp").

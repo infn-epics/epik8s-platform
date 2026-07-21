@@ -46,8 +46,75 @@ storage:
 
 kube-prometheus-stack: {} ## chart defaults, no site overrides
 
+## alloy subchart values override - same "epik8s-platform" release name / "logging"
+## namespace assumption as values-k8sda.yaml. Smaller retention/PVC than production
+## since this is a scratch-cluster test profile.
+## NOTE the double "alloy: alloy:" nesting - see the comment in values.yaml.
+alloy:
+  alloy:
+    configMap:
+      content: |
+        discovery.kubernetes "pods" {
+          role = "pod"
+        }
+
+        discovery.relabel "pod_logs" {
+          targets = discovery.kubernetes.pods.targets
+
+          rule {
+            source_labels = ["__meta_kubernetes_namespace"]
+            target_label  = "namespace"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_pod_name"]
+            target_label  = "pod"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_pod_container_name"]
+            target_label  = "container"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_pod_label_app"]
+            target_label  = "app"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_pod_container_name"]
+            separator     = "/"
+            target_label  = "job"
+          }
+        }
+
+        loki.source.kubernetes "pod_logs" {
+          targets    = discovery.relabel.pod_logs.output
+          forward_to = [loki.write.default.receiver]
+        }
+
+        loki.write "default" {
+          endpoint {
+            url = "http://epik8s-platform-loki.logging.svc.cluster.local:3100/loki/api/v1/push"
+          }
+        }
+
+loki:
+  singleBinary:
+    persistence:
+      size: 5Gi
+  loki:
+    limits_config:
+      retention_period: 72h ## 3 days - scratch/test cluster, keep it small
+
 grafana:
   ## no admin.existingSecret - let the chart generate its own on a fresh cluster
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Loki
+          type: loki
+          access: proxy
+          ## same "epik8s-platform" release name / "logging" namespace assumption as
+          ## the alloy: block above.
+          url: http://epik8s-platform-loki.logging.svc.cluster.local:3100
   persistence:
     enabled: true
     size: 5Gi

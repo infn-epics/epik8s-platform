@@ -11,5 +11,11 @@ dependencies:
 - name: strimzi-kafka-operator
   repository: https://strimzi.io/charts/
   version: 0.48.0
-digest: sha256:5d50001d49d17ad22c4f952ddc7f6c1f51b05c5ed93936235620ad9e32a102da
-generated: "2026-07-20T13:52:16.149821+02:00"
+- name: loki
+  repository: https://grafana.github.io/helm-charts
+  version: 6.55.0
+- name: alloy
+  repository: https://grafana.github.io/helm-charts
+  version: 1.9.0
+digest: sha256:1e39886442345d949a92614880a7a308f4bf147595042a1a490b609f5ad03723
+generated: "2026-07-21T11:38:08.408459+02:00"

@@ -56,6 +56,7 @@ It does **not** install the underlying operators/controllers:
 | ai-platform workloads | GPU operator (for `vllm`'s `nvidia.com/gpu` request), ingress-nginx |
 | Elasticsearch/Kibana/Kafka CRs | eck-operator, strimzi-kafka-operator - both ARE Helm dependencies of this chart (see below), so nothing extra to install for those two specifically |
 | Centralized LibreChat (`aiPlatform.librechat`) | **ArgoCD** (this is the one domain in this chart that isn't a plain `helm template`/`helm install` target - see "Centralized LibreChat" below), and `argus-helm-chart` pushed to a real git remote |
+| Loki + Alloy (`logging.loki`/`logging.alloy`) | ingress-nginx not required (no Ingress in this domain) - just a default StorageClass for Loki's PVC. Both ARE Helm dependencies of this chart, so nothing extra to install for those two specifically |
 
 A from-scratch cluster needs those prerequisites in place first; this chart
 covers everything layered on top of them.
@@ -125,6 +126,67 @@ rather than duplicating a direct-to-vllm endpoint (`argus-helm-chart`'s own
 `vllmService` "facility-wide singleton" stays disabled, since this chart
 already has that singleton as `aiPlatform.vllm`).
 
+## Centralized logging
+
+`logging.loki`/`logging.alloy` add cluster-wide pod log ingestion: Grafana
+[Loki](https://grafana.com/oss/loki/) as the log store, and [Grafana
+Alloy](https://grafana.com/docs/alloy/latest/) (a DaemonSet) as the collector,
+shipping every pod's logs to it. Both are real Helm dependencies of this
+chart, same pattern as `kube-prometheus-stack`/`eck-operator`/
+`strimzi-kafka-operator` - not bespoke templates.
+
+**Why Loki, not the existing `backend` Elasticsearch**: that Elasticsearch is
+genuinely control-critical - live ChannelFinder (`sparc-channelfinder`:
+1.74M docs, `euaps-channelfinder`: 2.37M docs), olog, and save-and-restore
+data the control room actively depends on, not a spare metadata store.
+High-volume pod logs sharing that cluster risks resource contention against
+services that matter operationally. Loki is also the right storage model for
+this kind of data - it indexes labels (`namespace`/`pod`/`container`/`app`),
+not full log content, which is both cheaper and matches what the original
+architecture doc already called for (Loki + Grafana, not a second
+Elasticsearch).
+
+**Loki** runs `deploymentMode: SingleBinary` (this isn't at a scale that
+needs the chart's distributed read/write/backend split), `storage.type:
+filesystem` on the cluster's default StorageClass (no S3/GCS/MinIO stood up
+just for a short retention window), `limits_config.retention_period: 168h`
+(7 days on `values-k8sda.yaml`, 72h on `values-generic.yaml`) - logs are
+disposable troubleshooting data, unlike the control-critical Elasticsearch
+content next to it, which already has its own much longer retention.
+
+**Alloy** ships as a DaemonSet, configured (via the chart's `configMap.content`
+value, in [River](https://grafana.com/docs/alloy/latest/get-started/configuration-syntax/)
+syntax) to discover every pod cluster-wide via `discovery.kubernetes`,
+attach `namespace`/`pod`/`container`/`app` labels, and forward to Loki's
+write endpoint via `loki.source.kubernetes` (reads pod logs through the
+Kubernetes API, not a hostPath tail) - the standard k8s-logs-to-Loki recipe.
+Its `ClusterRole` is extended (`pods`, `pods/log`, `namespaces`, `nodes` -
+`get`/`list`/`watch`) to allow that.
+
+**Double-nesting gotcha**: the chart dependency is named `alloy` (an outer
+key that just scopes values to that subchart, same as every other
+dependency here), but Alloy's own `values.yaml` *separately* has a
+top-level key also called `alloy:`, wrapping `configMap`/`stabilityLevel`.
+So `logging.*`-adjacent overrides in this repo need `alloy: { alloy: {
+configMap: { content: ... } } }` - two `alloy:` keys, not one - while `rbac:`
+sits at the first level only. Getting this wrong doesn't error, it just
+silently renders the chart's bundled example config instead of the real
+pipeline (caught by inspecting the rendered ConfigMap directly, not by
+`helm lint`/`helm template` exiting clean - see Verification below).
+
+`grafana:` (already deployed, already has a SPARC-archiver datasource from
+before this domain existed) gets a `Loki` datasource added too, so there's a
+log-browsing UI in Grafana itself immediately, independent of anything else
+consuming Loki later.
+
+**Not included in this domain**: any ARGUS/`argus-mcp-server` integration.
+`argus-mcp-server` already has a `get_logs` tool shaped for exactly this kind
+of data, but wiring it up (a `LokiProvider`, `argus-helm-chart` exposure,
+`epik8s-chart` `argusDefaults` plumbing) is a deliberate later step - this
+phase only stands up the ingestion pipeline and confirms logs actually flow,
+so there's real data to wire AI troubleshooting to when that follow-up
+happens.
+
 ## What's a pre-existing oddity, reproduced not fixed
 
 Per the compatibility mandate, known inconsistencies on the live cluster are
@@ -166,8 +228,8 @@ credentials), the chart references the **existing** Secret object by name
 ## Repo layout
 
 ```
-Chart.yaml            # kube-prometheus-stack, grafana, eck-operator, strimzi-kafka-operator
-                       #   as Helm dependencies, pinned to the versions currently deployed
+Chart.yaml            # kube-prometheus-stack, grafana, eck-operator, strimzi-kafka-operator,
+                       #   loki, alloy - as Helm dependencies, pinned to specific versions
 values.yaml            # domain toggles + chart-level defaults
 values-k8sda.yaml       # this cluster's exact current state
 files/ai-platform/      # embedded script sources (mounted into ConfigMaps via .Files.Get)
@@ -241,6 +303,27 @@ of building it:
   service,pvc -n backend -o json` - all match except fields the API server/ECK
   webhook injects as defaults (empty sub-objects, `imagePullPolicy`, etc.), which
   is expected and not something a manifest should specify.
+
+Centralized logging (Loki + Alloy) is also new capability, not codification -
+there's no live instance to diff against either. Verified by rendering both
+value profiles (`values-k8sda.yaml`, `values-generic.yaml`) and inspecting
+the actual output rather than trusting a clean `helm lint`/`helm template`
+exit code: `helm template epik8s-platform . -f <profile> --show-only
+charts/alloy/templates/configmap.yaml` to confirm the rendered River config
+contains the real `loki.write` endpoint URL (not the chart's bundled example
+pipeline - this is exactly the double-nesting bug described above, which
+`helm template` alone doesn't catch since a wrong key nesting still renders
+successfully, just with the wrong content), `--show-only
+charts/alloy/templates/rbac.yaml` to confirm the custom `ClusterRole` rule is
+present alongside the chart's defaults, `--show-only
+charts/loki/templates/config.yaml` to confirm `retention_period` matches each
+profile (168h/72h), and `--show-only charts/grafana/templates/configmap.yaml`
+to confirm the `Loki` datasource entry renders next to the existing SPARC
+Archiver one. Per "What this is NOT" above, nothing has been applied to the
+live cluster - deploying Loki/Alloy (new pods, new storage) needs its own
+explicit go-ahead, and once live, actually confirming logs are flowing
+(`logcli` or Grafana Explore against Loki) before starting the deferred ARGUS
+follow-up.
 
 Centralized LibreChat is new capability, not codification - there's no live
 instance to diff against, so it was verified differently: the rendered

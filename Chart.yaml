@@ -1,8 +1,9 @@
 apiVersion: v2
 name: epik8s-platform
 description: >
-  EPIK8S platform layer - site-specific networking, storage, monitoring, backend
-  and AI-platform configuration, kept separate from beamline (epik8s-chart) charts.
+  EPIK8S platform layer - site-specific networking, storage, monitoring, logging,
+  backend and AI-platform configuration, kept separate from beamline (epik8s-chart)
+  charts.
 version: 0.1.0
 dependencies:
   - name: kube-prometheus-stack
@@ -21,3 +22,11 @@ dependencies:
     version: "0.48.0"
     repository: "https://strimzi.io/charts/"
     condition: backend.strimziOperator.enabled
+  - name: loki
+    version: "6.55.0"
+    repository: "https://grafana.github.io/helm-charts"
+    condition: logging.loki.enabled
+  - name: alloy
+    version: "1.9.0"
+    repository: "https://grafana.github.io/helm-charts"
+    condition: logging.alloy.enabled
