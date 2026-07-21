@@ -310,6 +310,18 @@ logging:
   alloy:
     enabled: true
 
+## loki subchart values override - this cluster's CoreDNS Service is not named
+## "kube-dns" (RKE2's default is "rke2-coredns-rke2-coredns"), but the loki
+## chart's nginx gateway hardcodes an nginx resolver built from
+## global.dnsService/global.dnsNamespace (defaults "kube-dns"/"kube-system") -
+## without this override the gateway container crashloops on startup
+## ("host not found in resolver"). Confirmed via `kubectl get svc -n
+## kube-system | grep dns` on this cluster.
+loki:
+  global:
+    dnsService: rke2-coredns-rke2-coredns
+    dnsNamespace: kube-system
+
 ## alloy subchart values override - real in-cluster DNS name for the Loki
 ## single-binary Service, assuming this chart is deployed with release name
 ## "epik8s-platform" into a "logging" namespace (confirmed by rendering, see
