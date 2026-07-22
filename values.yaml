@@ -526,9 +526,20 @@ langfuse:
           name: langfuse-secrets
           key: nextauth-secret
 
+  ## Explicit host/endpoint overrides below (postgresql.host/redis.host/
+  ## clickhouse.host/s3.endpoint): the langfuse chart's own auto-derivation
+  ## (used when these are left blank) computes each bundled datastore's
+  ## expected Service name as "<release>-langfuse-<component>", but the
+  ## actual rendered Service names are just "<release>-<component>" (no
+  ## "-langfuse-" infix - confirmed by rendering and comparing against
+  ## `kubectl get svc`) - a real mismatch in the upstream chart, not a
+  ## naming choice made here. Assumes this domain is deployed with release
+  ## name "epik8s-platform" (same assumption already documented for Loki's
+  ## DNS name above).
   postgresql:
     deploy: true
     architecture: standalone
+    host: epik8s-platform-postgresql
     auth:
       existingSecret: langfuse-secrets
       secretKeys:
@@ -538,6 +549,7 @@ langfuse:
   redis:
     deploy: true
     architecture: standalone
+    host: epik8s-platform-redis-primary
     auth:
       existingSecret: langfuse-secrets
       existingSecretPasswordKey: redis-password
@@ -552,6 +564,7 @@ langfuse:
     deploy: true
     replicaCount: 1
     resourcesPreset: small
+    host: epik8s-platform-clickhouse
     auth:
       existingSecret: langfuse-secrets
       existingSecretKey: clickhouse-password
@@ -565,6 +578,7 @@ langfuse:
 
   s3:
     deploy: true
+    endpoint: http://epik8s-platform-s3:9000
     auth:
       existingSecret: langfuse-secrets
       rootUserSecretKey: minio-root-user
