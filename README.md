@@ -61,6 +61,31 @@ It does **not** install the underlying operators/controllers:
 A from-scratch cluster needs those prerequisites in place first; this chart
 covers everything layered on top of them.
 
+## Node-level tuning: inotify limits
+
+`sysctlTuning` (`templates/sysctl-tuning/daemonset.yaml`) is a small
+privileged `kube-system` DaemonSet that runs `sysctl -w
+fs.inotify.max_user_instances=1024` (plus re-asserting
+`max_user_watches=1048576`, already correctly set) on every node at
+startup. Confirmed live via a Loki query across the whole cluster: ~140
+unrelated pods, spanning multiple nodes and including core system
+DaemonSets (`kube-proxy`, `rke2-canal`, `csi-nfs-node`, `whereabouts`,
+`ceph-csi`), hit `failed to create fsnotify watcher: too many open files`
+over a 24h window - not any single application's bug. Root cause:
+`fs.inotify.max_user_watches` had already been tuned up on this cluster,
+but `fs.inotify.max_user_instances` was left at the untouched Linux kernel
+default of 128 - a pool shared per-UID across every container on a node,
+easily exhausted by a burst of pod restarts on a busy multi-tenant node.
+
+This is the one domain in this chart that's genuinely node/kernel-level
+rather than a Kubernetes API object - `sysctl -w` isn't persistent across a
+node reboot on its own, which is why this runs as a DaemonSet (re-applies
+on every node, including new nodes joining the cluster) rather than a
+one-off manual command. `hostPID: true` + a privileged initContainer is the
+standard, minimal-footprint pattern for this - the main container just
+sleeps, existing only so `kubectl get ds -n kube-system sysctl-tuning`
+shows whether every node has actually had the fix applied.
+
 ## Centralized LibreChat
 
 `aiPlatform.librechat` replaces the old `openwebui` component with a single,
@@ -250,22 +275,32 @@ view instead of two separately-correlated systems - Loki's `conversation_id`/
 `message_id` labels vs. Langfuse's own trace data). Bigger lift, deliberately
 deferred until the lighter correlation-ID approach below proves useful.
 
-### MCP tool-call correlation (Loki side)
+### MCP tool-call correlation (Loki side) - tried, reverted
 
-Separately from Langfuse itself, ARGUS's own MCP server registration (both
-the per-beamline self-registered `argus:` entry in `argus-helm-chart` and
-the centralized `argusMcpServers` entries this chart's own
-`templates/ai-platform/librechat.yaml` renders) carries `headers:` using
-LibreChat's `{{LIBRECHAT_BODY_CONVERSATIONID}}`/`{{LIBRECHAT_BODY_MESSAGEID}}`/
-`{{LIBRECHAT_USER_ID}}` placeholders - confirmed (LibreChat's own docs) these
-are freshly resolved before every individual tool call, not just once per
-connection. `argus-mcp-server` reads them per-call
-(`server.request_context.request.headers`, the MCP Python SDK's per-message
-request context) and binds them into its existing structured-logging scope,
-so every tool-call log line already flowing into Loki (see "Centralized
-logging" above) now carries which LibreChat conversation/message/user it
-came from - a bad-rated conversation's `conversationId` (from Langfuse) can
-be grepped straight against Loki to see exactly which tools ran.
+ARGUS's own MCP server registrations (both the per-beamline self-registered
+`argus:` entry in `argus-helm-chart` and the centralized `argusMcpServers`
+entries this chart's own `templates/ai-platform/librechat.yaml` renders)
+briefly carried `headers:` using LibreChat's
+`{{LIBRECHAT_BODY_CONVERSATIONID}}`/`{{LIBRECHAT_BODY_MESSAGEID}}`/
+`{{LIBRECHAT_USER_ID}}` placeholders, with `argus-mcp-server` reading them
+per-call (`server.request_context.request.headers`, the MCP Python SDK's
+per-message request context) and binding them into its structured-logging
+scope - the idea being every tool-call log line in Loki would carry which
+LibreChat conversation/message/user it came from.
+
+**Reverted** (`argus-helm-chart` commit `d06e88d`, this repo's own
+`templates/ai-platform/librechat.yaml`): it broke LibreChat's manual
+"Initialize"/reconnect action for every argus-family server with `MCP error
+-32600: Request body field(s) required to resolve runtime MCP placeholders:
+conversationId, messageId` - that flow runs outside any chat message, so
+there's no request body for LibreChat to resolve those placeholders from,
+and it hard-fails rather than substituting an empty value. Live chat-based
+tool calls worked fine (those requests do carry a conversationId), but
+breaking the ability to manually reconnect/test a server in the UI wasn't
+an acceptable tradeoff. `argus-mcp-server`'s header-extraction code
+(`argus/mcp_server/correlation.py`) is still in place and harmless - it
+just never finds these headers now, since nothing sends them. Revisit only
+if LibreChat adds a way to make body-scoped placeholders optional.
 
 ## What's a pre-existing oddity, reproduced not fixed
 

@@ -1,0 +1,65 @@
+{{- /*
+Cluster-wide inotify sysctl fix. fs.inotify.max_user_instances is shared per
+UID across every container on a node - it caps how many separate inotify
+file descriptors that UID can hold open at once, independent of
+max_user_watches (how many individual file watches each instance can
+register). Confirmed live: max_user_watches was already raised to 1048576
+on this cluster, but max_user_instances was left at the Linux kernel default
+of 128, which a burst of pod restarts easily exhausts on a busy node - seen
+live as "failed to create fsnotify watcher: too many open files" across
+~140 unrelated pods (including core system DaemonSets: kube-proxy,
+rke2-canal, csi-nfs-node, whereabouts, ceph-csi) spanning multiple nodes,
+not any single app's bug.
+
+Runs a privileged initContainer per node to `sysctl -w` both values (both
+set declaratively, even though only max_user_instances was actually wrong,
+so this DaemonSet is a complete, self-contained statement of the intended
+values rather than assuming max_user_watches stays correctly set forever).
+The main container just sleeps - its only job is to keep the DaemonSet
+Running/healthy so it's obvious via `kubectl get ds` whether every node has
+had the sysctl applied, and to re-apply automatically if a node reboots
+(sysctl -w is not persistent across reboots on its own).
+*/ -}}
+{{- if .Values.sysctlTuning.enabled }}
+{{- $v := .Values.sysctlTuning }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: sysctl-tuning
+  namespace: kube-system
+  labels:
+    app: sysctl-tuning
+spec:
+  selector:
+    matchLabels:
+      app: sysctl-tuning
+  template:
+    metadata:
+      labels:
+        app: sysctl-tuning
+    spec:
+      hostPID: true
+      tolerations:
+        - operator: Exists
+      initContainers:
+        - name: sysctl-tune
+          image: busybox:1.36
+          securityContext:
+            privileged: true
+          command:
+            - sh
+            - -c
+            - |
+              sysctl -w fs.inotify.max_user_instances={{ $v.inotify.maxUserInstances | int }}
+              sysctl -w fs.inotify.max_user_watches={{ $v.inotify.maxUserWatches | int }}
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { cpu: 50m, memory: 32Mi }
+      containers:
+        - name: pause
+          image: busybox:1.36
+          command: ["sh", "-c", "sleep infinity"]
+          resources:
+            requests: { cpu: 5m, memory: 8Mi }
+            limits: { cpu: 20m, memory: 16Mi }
+{{- end }}
