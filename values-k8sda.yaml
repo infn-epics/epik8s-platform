@@ -488,6 +488,27 @@ grafana:
         hosts:
           - grafana.k8sda.lnf.infn.it
 
+## langfuse subchart values override - real UI hostname (nextauth.url must
+## match this exactly for session/redirect correctness) and TLS, same
+## nginx ingressClassName pattern as every other ingress in this file. The
+## "langfuse-secrets" Secret this points at must be provisioned once, out
+## of band - see README.md "Observability: Langfuse".
+langfuse:
+  langfuse:
+    nextauth:
+      url: https://langfuse.k8sda.lnf.infn.it
+    ingress:
+      enabled: true
+      className: nginx
+      hosts:
+        - host: langfuse.k8sda.lnf.infn.it
+          paths:
+            - path: /
+              pathType: Prefix
+      tls:
+        enabled: true
+        secretName: langfuse-tls
+
 aiPlatform:
   enabled: true
   namespace: ai-platform

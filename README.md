@@ -187,6 +187,86 @@ phase only stands up the ingestion pipeline and confirms logs actually flow,
 so there's real data to wire AI troubleshooting to when that follow-up
 happens.
 
+## Observability: Langfuse
+
+`langfuse.enabled` adds self-hosted [Langfuse](https://langfuse.com/) - LLM/MCP
+observability for the centralized LibreChat: every chat turn becomes a
+queryable trace, thumbs-up/down feedback becomes a structured score (with
+`conversationId`/`messageId`/`userId` attached), and Langfuse ships its own
+MCP server so an LLM session can directly query its own trace/feedback
+history to help debug and improve ARGUS's tools - not just a human staring at
+a dashboard.
+
+**Real new footprint, not a lightweight addition**: the `langfuse/langfuse`
+chart (one Helm dependency here, same pattern as `loki`/`kube-prometheus-stack`)
+bundles Postgres, ClickHouse (which itself pulls in Zookeeper, even at a
+single replica - Langfuse's schema uses replicated table engines that need
+Keeper coordination regardless of replica count), Redis/Valkey, and MinIO as
+dependencies. That's **6 stateful/app workloads** (Postgres, Zookeeper,
+ClickHouse, Redis, MinIO, plus `langfuse-web`/`langfuse-worker`), not one.
+Nothing on this cluster was reusable for any of the four datastores at the
+time this was added (checked: no existing Postgres/ClickHouse/Redis/MinIO
+anywhere, only ArgoCD's own internal Redis, which isn't shareable) - all
+provisioned fresh.
+
+**Deliberately single-replica/dev-mode throughout** (`postgresql`/`redis`
+`architecture: standalone`, `clickhouse.replicaCount: 1`, its bundled
+`clickhouse.zookeeper.replicaCount: 1` - the chart's own default is 3,
+independent of the top-level `clickhouse.replicaCount` and easy to miss),
+same right-sized-not-textbook-production posture as Loki's `SingleBinary`
+mode - not the chart's own HA-by-default guidance, which assumes a much
+larger production deployment than this cluster's scale warrants today.
+
+**Secrets**: same policy as everywhere else in this chart - no literal
+values in git. `langfuse.langfuse.salt`/`encryptionKey`/`nextauth.secret`
+and every datastore's `auth.existingSecret` point at one `langfuse-secrets`
+Secret, provisioned once, out of band:
+
+```bash
+kubectl create secret generic langfuse-secrets -n langfuse \
+  --from-literal=salt="$(openssl rand -base64 32)" \
+  --from-literal=encryption-key="$(openssl rand -hex 32)" \
+  --from-literal=nextauth-secret="$(openssl rand -base64 32)" \
+  --from-literal=postgres-password="$(openssl rand -base64 24)" \
+  --from-literal=redis-password="$(openssl rand -base64 24)" \
+  --from-literal=clickhouse-password="$(openssl rand -base64 24)" \
+  --from-literal=minio-root-user="langfuse" \
+  --from-literal=minio-root-password="$(openssl rand -base64 24)"
+```
+
+**Bootstrap ordering, not a bug**: `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`
+(the credentials LibreChat needs to actually send traces) can only be
+generated *from Langfuse's own UI*, after first login to the deployed
+instance - there's no way to pre-generate them before Langfuse exists. Until
+that manual, one-time step happens and the result is patched into
+`argus-helm-chart`'s `secrets.data.LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`
+(same out-of-band pattern already used for `RAGFLOW_API_KEY`), this domain's
+plumbing is ready but traces won't actually flow yet.
+
+**Not included in this phase**: deep per-tool-call span instrumentation
+inside `argus-mcp-server` itself via the Langfuse Python SDK (would nest
+individual tool-call spans under each LibreChat trace, giving one unified
+view instead of two separately-correlated systems - Loki's `conversation_id`/
+`message_id` labels vs. Langfuse's own trace data). Bigger lift, deliberately
+deferred until the lighter correlation-ID approach below proves useful.
+
+### MCP tool-call correlation (Loki side)
+
+Separately from Langfuse itself, ARGUS's own MCP server registration (both
+the per-beamline self-registered `argus:` entry in `argus-helm-chart` and
+the centralized `argusMcpServers` entries this chart's own
+`templates/ai-platform/librechat.yaml` renders) carries `headers:` using
+LibreChat's `{{LIBRECHAT_BODY_CONVERSATIONID}}`/`{{LIBRECHAT_BODY_MESSAGEID}}`/
+`{{LIBRECHAT_USER_ID}}` placeholders - confirmed (LibreChat's own docs) these
+are freshly resolved before every individual tool call, not just once per
+connection. `argus-mcp-server` reads them per-call
+(`server.request_context.request.headers`, the MCP Python SDK's per-message
+request context) and binds them into its existing structured-logging scope,
+so every tool-call log line already flowing into Loki (see "Centralized
+logging" above) now carries which LibreChat conversation/message/user it
+came from - a bad-rated conversation's `conversationId` (from Langfuse) can
+be grepped straight against Loki to see exactly which tools ran.
+
 ## What's a pre-existing oddity, reproduced not fixed
 
 Per the compatibility mandate, known inconsistencies on the live cluster are

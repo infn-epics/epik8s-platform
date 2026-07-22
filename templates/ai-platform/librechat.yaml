@@ -15,6 +15,19 @@ entry to still carry "enabled" (it does its own `if $server.enabled` +
 silently disappears from the rendered librechat.yaml.
 */ -}}
 {{- $mcpServers := deepCopy $lc.mcpServers }}
+{{- /*
+Freshly resolved before every individual tool call (not just once per SSE
+connection) per LibreChat's own docs -- lets each beamline's argus-mcp tie
+its own tool-call logs back to the exact LibreChat conversation/message/user
+that triggered them, same as argus-helm-chart's own self-registered "argus"
+entry does for beamlines running their own LibreChat. See README.md
+"Observability: Langfuse".
+*/ -}}
+{{- $correlationHeaders := dict
+      "X-Librechat-Conversation-Id" "{{LIBRECHAT_BODY_CONVERSATIONID}}"
+      "X-Librechat-Message-Id" "{{LIBRECHAT_BODY_MESSAGEID}}"
+      "X-Librechat-User-Id" "{{LIBRECHAT_USER_ID}}"
+    }}
 {{- range $lc.argusMcpServers }}
 {{- $_ := set $mcpServers .name (dict
       "enabled" true
@@ -23,6 +36,7 @@ silently disappears from the rendered librechat.yaml.
       "chatMenu" true
       "title" (.title | default .name)
       "description" (.description | default (printf "ARGUS accelerator-control assistant for %s." .name))
+      "headers" $correlationHeaders
     ) }}
 {{- end }}
 {{- /*

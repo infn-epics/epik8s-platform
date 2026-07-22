@@ -36,6 +36,13 @@ logging:
   alloy:
     enabled: true
 
+## LLM/MCP observability (LibreChat trace + feedback, ARGUS tool-call
+## correlation) - deliberately its own toggle, not folded into logging.* or
+## monitoring.*: it's application-level AI observability, not
+## infrastructure/pod monitoring. See README.md "Observability: Langfuse".
+langfuse:
+  enabled: true
+
 ## kube-prometheus-stack subchart values (dependency name: kube-prometheus-stack)
 kube-prometheus-stack: {}
 
@@ -488,3 +495,77 @@ aiPlatform:
     chunkSize: "1100"
     chunkOverlap: "150"
     requestTimeoutSeconds: "30"
+
+## langfuse subchart values (dependency name: langfuse) - the langfuse/langfuse
+## chart bundles Postgres, ClickHouse (+ its own Zookeeper), Redis/Valkey, and
+## MinIO as dependencies (one Helm dependency here, not four) - single-replica/
+## dev-mode throughout, matching this cluster's scale (same posture as Loki's
+## SingleBinary mode), not the chart's HA-by-default guidance. Every credential
+## below is an existingSecret/secretKeyRef reference, never a literal value -
+## see README.md "Observability: Langfuse" for the exact `kubectl create
+## secret` commands that provision the real "langfuse-secrets" Secret this
+## points at (not part of this chart, provisioned once, out of band).
+langfuse:
+  langfuse:
+    salt:
+      secretKeyRef:
+        name: langfuse-secrets
+        key: salt
+    encryptionKey:
+      secretKeyRef:
+        name: langfuse-secrets
+        key: encryption-key
+    ## nextauth.url must be the real externally-reachable UI URL (used for
+    ## session/redirect correctness) - overridden per-environment in
+    ## values-k8sda.yaml; the localhost default here only matters if this
+    ## chart is ever rendered without an environment overlay.
+    nextauth:
+      url: http://localhost:3000
+      secret:
+        secretKeyRef:
+          name: langfuse-secrets
+          key: nextauth-secret
+
+  postgresql:
+    deploy: true
+    architecture: standalone
+    auth:
+      existingSecret: langfuse-secrets
+      secretKeys:
+        userPasswordKey: postgres-password
+        adminPasswordKey: postgres-password
+
+  redis:
+    deploy: true
+    architecture: standalone
+    auth:
+      existingSecret: langfuse-secrets
+      existingSecretPasswordKey: redis-password
+
+  ## ClickHouse's own Bitnami subchart pulls in Zookeeper regardless of
+  ## replicaCount (Langfuse's schema uses replicated table engines that need
+  ## Keeper coordination even with a single replica) - real footprint is
+  ## ClickHouse + Zookeeper, not just ClickHouse. replicaCount/resourcesPreset
+  ## both explicitly downsized from the chart's HA-oriented defaults (3
+  ## replicas, 2xlarge preset).
+  clickhouse:
+    deploy: true
+    replicaCount: 1
+    resourcesPreset: small
+    auth:
+      existingSecret: langfuse-secrets
+      existingSecretKey: clickhouse-password
+    ## the clickhouse subchart's own default overrides zookeeper.replicaCount
+    ## to 3 (HA posture) independently of clickhouse.replicaCount above -
+    ## without this, "single-replica" ClickHouse would still bring a 3-node
+    ## Zookeeper ensemble.
+    zookeeper:
+      replicaCount: 1
+      resourcesPreset: nano
+
+  s3:
+    deploy: true
+    auth:
+      existingSecret: langfuse-secrets
+      rootUserSecretKey: minio-root-user
+      rootPasswordSecretKey: minio-root-password

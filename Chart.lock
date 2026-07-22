@@ -17,5 +17,8 @@ dependencies:
 - name: alloy
   repository: https://grafana.github.io/helm-charts
   version: 1.9.0
-digest: sha256:1e39886442345d949a92614880a7a308f4bf147595042a1a490b609f5ad03723
-generated: "2026-07-21T11:38:08.408459+02:00"
+- name: langfuse
+  repository: https://langfuse.github.io/langfuse-k8s
+  version: 1.5.40
+digest: sha256:210bd53294143756b1f05a42d89a9833096629ce0b5836841eb53c655284a45d
+generated: "2026-07-22T11:47:17.046075+02:00"
