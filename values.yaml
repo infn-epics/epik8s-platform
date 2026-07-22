@@ -563,7 +563,13 @@ langfuse:
   clickhouse:
     deploy: true
     replicaCount: 1
-    resourcesPreset: small
+    ## "small" (768Mi limit) crashlooped in practice - ClickHouse's own
+    ## memory tracker reserves ~90% of that (691.2MiB) and hit
+    ## MEMORY_LIMIT_EXCEEDED just from its own internal system logs
+    ## (trace_log/metric_log/asynchronous_metric_log), before any real
+    ## trace data. "medium" (1536Mi) is the smallest preset that ran
+    ## stably - confirmed live, not a guess.
+    resourcesPreset: medium
     host: epik8s-platform-clickhouse
     auth:
       existingSecret: langfuse-secrets

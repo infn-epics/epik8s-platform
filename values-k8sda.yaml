@@ -500,6 +500,16 @@ langfuse:
     ingress:
       enabled: true
       className: nginx
+      ## without this, nginx has no valid cert for the host and silently
+      ## falls back to its own default self-signed cert - Node's fetch()
+      ## (LibreChat's own outbound calls to Langfuse) then hard-fails with
+      ## "self-signed certificate" rather than a connection-refused/DNS
+      ## error, which is what actually surfaced this live (see git history/
+      ## session notes: LibreChat logged "[langfuse] feedback score failed:
+      ## fetch failed", root-caused via a direct fetch() test from inside
+      ## the LibreChat pod).
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
       hosts:
         - host: langfuse.k8sda.lnf.infn.it
           paths:
