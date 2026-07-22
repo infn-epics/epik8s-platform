@@ -19,6 +19,17 @@ storage:
   ## {name, provisioner, reclaimPolicy, volumeBindingMode, allowVolumeExpansion, mountOptions[], parameters{}}
   classes: []
 
+## Cluster-wide inotify sysctl fix (kube-system DaemonSet) - see
+## templates/sysctl-tuning/daemonset.yaml for the full "why" (confirmed live
+## via Loki: ~140 unrelated pods across multiple nodes hitting "failed to
+## create fsnotify watcher: too many open files" from
+## fs.inotify.max_user_instances stuck at the Linux kernel default of 128).
+sysctlTuning:
+  enabled: true
+  inotify:
+    maxUserInstances: 1024
+    maxUserWatches: 1048576
+
 monitoring:
   kubePrometheusStack:
     enabled: true
