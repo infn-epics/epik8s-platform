@@ -16,18 +16,18 @@ silently disappears from the rendered librechat.yaml.
 */ -}}
 {{- $mcpServers := deepCopy $lc.mcpServers }}
 {{- /*
-Freshly resolved before every individual tool call (not just once per SSE
-connection) per LibreChat's own docs -- lets each beamline's argus-mcp tie
-its own tool-call logs back to the exact LibreChat conversation/message/user
-that triggered them, same as argus-helm-chart's own self-registered "argus"
-entry does for beamlines running their own LibreChat. See README.md
-"Observability: Langfuse".
+Deliberately NOT setting per-tool-call correlation headers here
+(X-Librechat-Conversation-Id/Message-Id via LibreChat's {{LIBRECHAT_BODY_*}}
+placeholders) -- tried this and it broke LibreChat's manual "Initialize"/
+reconnect action for every argus-family server with "MCP error -32600:
+Request body field(s) required to resolve runtime MCP placeholders:
+conversationId, messageId", since that flow runs outside any chat message
+and has no body to resolve those from. Live chat-based tool calls worked
+fine, but breaking manual reinitialize wasn't an acceptable tradeoff.
+Revisit only if LibreChat adds a way to make body-scoped placeholders
+optional. Matches argus-helm-chart's own self-registered "argus" entry,
+which has the same note.
 */ -}}
-{{- $correlationHeaders := dict
-      "X-Librechat-Conversation-Id" "{{LIBRECHAT_BODY_CONVERSATIONID}}"
-      "X-Librechat-Message-Id" "{{LIBRECHAT_BODY_MESSAGEID}}"
-      "X-Librechat-User-Id" "{{LIBRECHAT_USER_ID}}"
-    }}
 {{- range $lc.argusMcpServers }}
 {{- $_ := set $mcpServers .name (dict
       "enabled" true
@@ -36,7 +36,6 @@ entry does for beamlines running their own LibreChat. See README.md
       "chatMenu" true
       "title" (.title | default .name)
       "description" (.description | default (printf "ARGUS accelerator-control assistant for %s." .name))
-      "headers" $correlationHeaders
     ) }}
 {{- end }}
 {{- /*
