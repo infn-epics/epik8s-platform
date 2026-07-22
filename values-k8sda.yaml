@@ -619,8 +619,8 @@ aiPlatform:
         apiKeySecretKey: "AIGW_90_API_KEY"
         baseURL: "https://ai-gateway.131.154.99.90.myip.cloud.infn.it/v1"
         models:
-          default: ["qwen36-27b", "gemma-4-31b-it", "qwen35-122b-a10b-gptq-int4"]
-          fetch: false
+          default: ["minimax-m27","qwen36-27b-x2","qwen36-27b", "gemma-4-31b-it", "qwen35-122b-a10b-gptq-int4"]
+          fetch: true
         modelDisplayLabel: "AI-Gateway-90"
     ## serviceName confirmed by rendering each beamline's computed argus values
     ## through argus-helm-chart directly (helm's naming convention for release
@@ -656,6 +656,20 @@ aiPlatform:
       backends:
         ragflow:
           baseUrl: "https://ragflow-api-lnf.131.154.99.90.myip.cloud.infn.it"
+        ## shared, cluster-wide instance - not beamline-specific, so this
+        ## central argus-mcp (unlike each beamline's own) can genuinely
+        ## search logs across every namespace at once. Same URL as every
+        ## beamline's own instance - see README.md "Centralized logging".
+        loki:
+          baseUrl: "http://epik8s-platform-loki.logging.svc.cluster.local:3100"
+        ## argocd.serverUrl intentionally left unset here - a real ArgoCD API
+        ## token is needed (anonymous/readonly access is disabled on this
+        ## cluster's ArgoCD, confirmed via argocd-cm), and none of the
+        ## existing per-beamline accounts (btfuser/sparc/euaps) are scoped
+        ## for cross-beamline visibility, which is the whole point of wiring
+        ## this into the *central* instance specifically. Needs a real
+        ## decision (new dedicated read-only account vs. reusing an existing
+        ## one) before this can be set - see PR/session notes.
 
   confluenceIngester:
     baseUrl: https://confluence.infn.it
