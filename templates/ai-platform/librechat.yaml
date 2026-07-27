@@ -61,6 +61,12 @@ hang (no route without squid), not error out. See README.md.
       "auth" $lc.auth
       "secrets" (dict "create" true "data" (dict))
 }}
+{{- if $lc.speech.enabled }}
+{{- $_ := set $argusHelmValues "speech" $lc.speech }}
+{{- end }}
+{{- if $lc.modelSpecs.enabled }}
+{{- $_ := set $argusHelmValues "modelSpecs" $lc.modelSpecs }}
+{{- end }}
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

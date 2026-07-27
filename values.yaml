@@ -338,6 +338,25 @@ aiPlatform:
       cluster:
         enabled: false
 
+  ## Self-hosted STT+TTS for LibreChat's voice input/output, kept off the
+  ## cluster's one GPU (already exclusively claimed by vllm above at
+  ## gpuMemoryUtilization 0.92, ~1.2GB free - not enough headroom, and no
+  ## time-slicing configured). speaches (https://github.com/speaches-ai/speaches)
+  ## is a single OpenAI-API-compatible server implementing BOTH
+  ## /v1/audio/transcriptions (STT, faster-whisper) and /v1/audio/speech
+  ## (TTS, piper/Kokoro), so one CPU-only component covers both - see
+  ## aiPlatform.librechat.speech below for how LibreChat is pointed at it.
+  speaches:
+    enabled: true
+    image: ghcr.io/speaches-ai/speaches:latest-cpu
+    replicas: 1
+    sttModel: "Systran/faster-whisper-small" # multilingual, CPU-friendly
+    storageClassName: local-path
+    storageSize: 20Gi # HF model cache - avoids re-download on pod restart
+    resources:
+      requests: { cpu: "1", memory: 2Gi }
+      limits: { cpu: "4", memory: 4Gi }
+
   embeddings:
     enabled: true
     ## placeholder image until a real embeddings backend is deployed, see README.
@@ -436,6 +455,31 @@ aiPlatform:
           fetch: true
         titleConvo: true
         modelDisplayLabel: "LiteLLM Gateway"
+    ## Which endpoint+model a new conversation opens with (LibreChat's
+    ## modelSpecs.list[].default, not just an endpoint's own models.default
+    ## ordering - that only affects that one endpoint's own picker, not
+    ## which endpoint/model is preselected app-wide). preset.endpoint must
+    ## match an llmEndpoints[].name above exactly. Empty by default here -
+    ## site-specific, see values-k8sda.yaml for the real entry (references
+    ## an llmEndpoints entry that only exists there).
+    modelSpecs:
+      enabled: false
+      list: []
+    ## Voice input/output, backed by the self-hosted aiPlatform.speaches
+    ## service above (CPU-only faster-whisper + piper/Kokoro) - literal
+    ## in-cluster URL, same convention as llmEndpoints/mcpServers below
+    ## (no cross-referencing sibling component blocks). tts.model/voices
+    ## are placeholders - confirm against speaches' own GET /v1/models
+    ## before relying on them, see epik8s-platform README.
+    speech:
+      enabled: true
+      stt:
+        url: "http://speaches.ai-platform.svc.cluster.local:8000/v1"
+        model: "Systran/faster-whisper-small" # must match aiPlatform.speaches.sttModel
+      tts:
+        url: "http://speaches.ai-platform.svc.cluster.local:8000/v1"
+        model: ""
+        voices: []
     ## carries forward what openwebui's TOOL_SERVER_CONNECTIONS registered,
     ## so replacing the frontend doesn't drop existing capability.
     mcpServers:

@@ -570,6 +570,12 @@ aiPlatform:
       enabled: true
       host: qdrant.k8sda.lnf.infn.it
 
+  ## NOTE: same "new capability, not codification" caveat as librechat below
+  ## - nothing live to reproduce here yet.
+  speaches:
+    ## live PVC storage class - see qdrant above.
+    storageClassName: nfs20t
+
   mcp:
     kubernetesMcp:
       ingress:
@@ -622,6 +628,16 @@ aiPlatform:
           default: ["minimax-m27","qwen36-27b-x2","qwen36-27b", "gemma-4-31b-it", "qwen35-122b-a10b-gptq-int4"]
           fetch: true
         modelDisplayLabel: "AI-Gateway-90"
+    ## New conversations open on AI-Gateway-90 / minimax-m27 by default.
+    modelSpecs:
+      enabled: true
+      list:
+        - name: "ai-gateway-90-minimax-m27"
+          label: "AI-Gateway-90 - Minimax M2.7"
+          default: true
+          preset:
+            endpoint: "AI-Gateway-90"
+            model: "minimax-m27"
     ## serviceName confirmed by rendering each beamline's computed argus values
     ## through argus-helm-chart directly (helm's naming convention for release
     ## name "argus" + chart name "argus-helm-chart", not simply "argus-mcp").
