@@ -149,8 +149,16 @@ class ArgusMcpBridge:
         # schemas. Verify `function_tool(..., raw_schema=...)` against the
         # actually-installed livekit-agents version before relying on this
         # in production; the signature has moved across releases.
+        #
+        # When raw_schema is given, function_tool's own `name=`/`description=`
+        # kwargs are ignored entirely (confirmed against 1.6.7's tool_context.py:
+        # deco_raw() only reads raw_schema["name"]/["parameters"], never the
+        # outer args) - name/description/parameters must all live inside the
+        # raw_schema dict itself, per RawFunctionDescription.
         return function_tool(
-            name=qualified_name,
-            description=qualified_description,
-            raw_schema=input_schema,
+            raw_schema={
+                "name": qualified_name,
+                "description": qualified_description,
+                "parameters": input_schema,
+            },
         )(_call)
