@@ -28,6 +28,16 @@ spec:
   # nearly-saturated card (see values.yaml's vllm.gpuMemoryUtilization)
   # relies on one worker serializing requests rather than parallel batching.
   replicas: 1
+  # Confirmed live 2026-07-29: default RollingUpdate briefly needs 2
+  # nvidia.com/gpu on the same node (old pod + surge pod) - fine when the
+  # node has spare GPUs, but plk8sdagpu001 only has 2 total and argus-tts
+  # already claims one, so a routine restart deadlocked with "Insufficient
+  # nvidia.com/gpu" until the old pod was deleted by hand. Recreate avoids
+  # ever needing more than 1 GPU for this Deployment at a time, at the
+  # cost of a brief STT outage during restarts - acceptable for a single-
+  # replica GPU service.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: argus-stt

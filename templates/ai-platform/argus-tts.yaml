@@ -25,6 +25,12 @@ metadata:
     app: argus-tts
 spec:
   replicas: 1
+  # See argus-stt.yaml's strategy comment - same GPU-contention risk,
+  # same fix: this node only has 2 GPUs shared between argus-stt and
+  # argus-tts, so RollingUpdate's momentary "old pod + surge pod" can
+  # deadlock on Insufficient nvidia.com/gpu.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: argus-tts
