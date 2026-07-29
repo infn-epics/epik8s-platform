@@ -53,6 +53,7 @@ import httpx
 import openai as openai_sdk
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli, mcp
 from livekit.plugins import openai, silero
+from livekit.plugins.openai.tts import AUDIO_STREAM_MODELS as _OPENAI_AUDIO_STREAM_MODELS
 
 from argus_mcp_bridge import ArgusMcpBridge, ArgusMcpServerConfig
 from events import send_transcript
@@ -71,6 +72,23 @@ STT_LANGUAGE = os.environ.get("STT_LANGUAGE", "it")
 TTS_BASE_URL = os.environ["TTS_BASE_URL"]
 TTS_MODEL = os.environ.get("TTS_MODEL", "speaches-ai/piper-it_IT-riccardo-x_low")
 TTS_VOICE = os.environ.get("TTS_VOICE", "it_IT-riccardo-x_low")
+# livekit-plugins-openai's TTS.synthesize() picks between two incompatible
+# wire protocols purely by matching the model name against a hardcoded
+# AUDIO_STREAM_MODELS = {"tts-1", "tts-1-hd"} set (tts.py): a match uses
+# the classic "one full audio file back" protocol (AudioChunkedStream); no
+# match uses the newer SSE `data: {"type":"audio.delta",...}` streaming
+# protocol (SSEChunkedStream), meant for gpt-4o-mini-tts. Confirmed live:
+# argus-tts/speaches (Piper backend) only ever implements the classic
+# protocol - it returns one complete binary audio file per request (200
+# OK, real bytes, confirmed in its own logs) regardless of TTS_MODEL's
+# name. Every session's TTS calls were going through SSEChunkedStream by
+# default (our model name isn't in that set), which parsed the raw binary
+# response as SSE text lines, found zero valid "data: " lines in it, and
+# raised "no audio frames were pushed" every single time - independent of
+# text length/content, hence every previous "fix" for this looked
+# plausible but didn't touch the actual cause. Registering our model name
+# here routes it through the correct (already-working) protocol instead.
+_OPENAI_AUDIO_STREAM_MODELS.add(TTS_MODEL)
 LLM_BASE_URL = os.environ["LLM_BASE_URL"]
 LLM_MODEL = os.environ.get("LLM_MODEL", "llama3-8b")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "none")
