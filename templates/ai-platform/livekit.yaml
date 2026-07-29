@@ -26,6 +26,13 @@ that actually gets a public IP/works through NAT depends entirely on the
 target cluster/cloud - this is the single most environment-specific part
 of this whole component. See LiveKit's own self-hosting docs for
 TURN/TLS-over-443 fallback options if UDP is blocked for end users.
+
+aiPlatform.livekit.rtc.nodeIp MUST be set to livekit-rtc's actual external
+IP once known - without it, the server falls back to STUN-based
+use_external_ip auto-detection, which finds the node's own outbound NAT
+IP, not the LoadBalancer Service's VIP, and silently breaks every voice
+session (signaling connects, the WebRTC media PeerConnection never does).
+Confirmed live on the k8sda cluster - see values.yaml's rtc.nodeIp comment.
 */ -}}
 {{- if and .Values.aiPlatform.enabled .Values.aiPlatform.livekit.enabled }}
 {{- $ns := .Values.aiPlatform.namespace }}
@@ -38,6 +45,16 @@ metadata:
 data:
   config.yaml: |
 {{ $v.configYaml | indent 4 }}
+    rtc:
+      tcp_port: 7881
+      port_range_start: {{ $v.rtc.portRangeStart }}
+      port_range_end: {{ $v.rtc.portRangeEnd }}
+      {{- if $v.rtc.nodeIp }}
+      node_ip: {{ $v.rtc.nodeIp | quote }}
+      use_external_ip: false
+      {{- else }}
+      use_external_ip: true
+      {{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment

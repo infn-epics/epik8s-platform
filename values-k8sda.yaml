@@ -632,6 +632,15 @@ aiPlatform:
   argusTts:
     storageClassName: nfs20t
 
+  ## Confirmed live 2026-07-29: livekit-rtc's MetalLB-assigned external IP.
+  ## Re-verify with `kubectl get svc livekit-rtc -n ai-platform` if this
+  ## Service is ever deleted/recreated - MetalLB does not guarantee the
+  ## same IP on redeploy unless a static IP is requested (see the
+  ## loadbalancer: <ip> pattern used by pvagateway/gateway above).
+  livekit:
+    rtc:
+      nodeIp: "192.168.108.224"
+
   mcp:
     kubernetesMcp:
       ingress:

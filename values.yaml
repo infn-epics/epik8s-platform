@@ -405,16 +405,23 @@ aiPlatform:
       ## livekit.yaml's header comment before changing this.
       serviceType: LoadBalancer
       serviceAnnotations: {}
+      ## Set this to the livekit-rtc Service's actual external IP once
+      ## known (`kubectl get svc livekit-rtc -n ai-platform`, or a
+      ## requested static IP - see the loadbalancer: <ip> pattern used by
+      ## pvagateway/gateway in beamline deploy repos) once you have one.
+      ## Left empty, the server falls back to STUN-based use_external_ip
+      ## auto-detection, which discovers the NODE's own outbound NAT IP -
+      ## NOT the LoadBalancer Service's VIP - and does not work for this
+      ## topology (confirmed live: signaling connects fine, but the actual
+      ## WebRTC PeerConnection fails with "could not establish pc
+      ## connection", no useful server-side log line). See livekit.yaml
+      ## for how this becomes rtc.node_ip in the rendered config.
+      nodeIp: ""
     ingress:
       enabled: false
       host: ""
     configYaml: |
       port: 7880
-      rtc:
-        tcp_port: 7881
-        port_range_start: 50000
-        port_range_end: 50100
-        use_external_ip: false
       logging:
         level: info
 
