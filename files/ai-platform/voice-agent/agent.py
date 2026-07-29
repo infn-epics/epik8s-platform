@@ -168,4 +168,16 @@ if __name__ == "__main__":
     # unset before `python agent.py start` runs, so neither this Python
     # layer nor the Rust FFI layer ever sees them - proxy env vars are
     # only needed during the earlier `pip install` step.
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, http_proxy=""))
+    #
+    # agent_name is deliberately non-empty: an EMPTY agent_name makes
+    # livekit-agents' automatic dispatch fire once per room CREATION (not
+    # per participant join) - confirmed live, this silently drops every
+    # session after the first for the dashboard's single static room name
+    # ("sparc-argus-control-room"), since the room object stays alive for
+    # emptyTimeout (300s) after emptying and a rejoin within that window
+    # isn't a new "creation" from the SFU's point of view. Naming the
+    # worker opts OUT of automatic dispatch entirely - it now only runs
+    # jobs explicitly requested via AgentDispatchService.CreateDispatch,
+    # which voice-token-server.py calls on every /token request, so every
+    # session (fresh room or not) gets its own job.
+    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, http_proxy="", agent_name="argus-voice-agent"))

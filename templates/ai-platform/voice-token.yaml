@@ -43,12 +43,14 @@ spec:
         - name: server
           image: {{ $v.image }}
           command: ["sh", "-lc"]
-          args: ["pip install --no-cache-dir pyjwt && python /app/server.py"]
+          args: ["pip install --no-cache-dir pyjwt livekit-api && python /app/server.py"]
           ports:
             - name: http
               containerPort: 8080
               protocol: TCP
           env:
+            - name: LIVEKIT_URL
+              value: "ws://livekit-server.{{ $ns }}.svc.cluster.local:7880"
             - name: LIVEKIT_API_KEY
               valueFrom:
                 secretKeyRef:
