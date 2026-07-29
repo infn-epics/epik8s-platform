@@ -151,6 +151,109 @@ rather than duplicating a direct-to-vllm endpoint (`argus-helm-chart`'s own
 `vllmService` "facility-wide singleton" stays disabled, since this chart
 already has that singleton as `aiPlatform.vllm`).
 
+## Voice Assistant (experimental, Jarvis-like)
+
+Disabled by default (`aiPlatform.livekit.enabled` / `voiceToken.enabled` /
+`voiceAgent.enabled`, all `false`). Adds a real-time, streaming voice
+interface to the accelerator control system - distinct from LibreChat's
+existing push-to-talk-transcribe-then-chat voice I/O (`aiPlatform.librechat.speech`
+above), which is request/response, not a persistent session. Three new
+components, one Helm template each, same convention as everything else in
+`templates/ai-platform/`:
+
+- **`livekit.yaml`** - a single-node LiveKit server (`livekit/livekit-server`).
+  Handles the WebRTC room the browser and the voice agent both join. See the
+  template's own header comment for the required Secret shape and, most
+  importantly, the RTC/UDP networking caveat - the signaling path (port 7880)
+  works fine behind the shared ingress, but the media path (a UDP port range)
+  does not go through a normal HTTP(S) ingress and needs a real
+  `LoadBalancer`/reachable IP, which is entirely environment-specific.
+- **`voice-token.yaml`** - `files/ai-platform/voice-token-server.py`, a
+  small stdlib-only HTTP service that mints LiveKit JWTs for
+  `POST {room, identity} -> {token}`. This is the one component of the
+  three that needs external ingress reachability, since it's called
+  directly from the operator's browser (not server-to-server).
+- **`voice-agent.yaml`** - `files/ai-platform/voice-agent/`, a
+  `livekit-agents` Python worker wiring together:
+  - **STT**: `aiPlatform.argusStt` (already deployed, see above)
+  - **LLM**: the `litellm` gateway (already deployed, see above)
+  - **TTS**: `aiPlatform.argusTts` (already deployed, see above)
+  - **Tools**: `kubernetes-mcp` + `rag-mcp` via `livekit-agents`' native
+    MCP integration (their entire tool surface, since both are read-only
+    by construction - see their own RBAC/Qdrant-client code), plus one
+    `ArgusMcpBridge` per `aiPlatform.librechat.argusMcpServers` entry
+    (reused, not duplicated - same beamline argus-mcp deployments
+    LibreChat already talks to).
+
+### Safety: why the agent's tool access is an explicit allowlist
+
+`argus-mcp-server` (the beamline-side MCP server, a separate repo) exposes
+`set_pv`/`set_pv_value` (writes any PV to any value via EPICS `caput`, no
+confirmation, no allowlist, no value validation) and `restart_ioc` (deletes
+a live IOC pod to force a restart) alongside its read-only tools, with
+**no built-in confirmation, rate-limit, or allowlist gate of its own** -
+and these write tools are already reachable from the central LibreChat's
+plain text chat today. A voice interface makes misuse *more* likely than
+text chat, not less - STT can mishear a PV name or a number, and a spoken
+command has no undo/edit step before it's "sent".
+
+`files/ai-platform/voice-agent/argus_mcp_bridge.py` therefore does **not**
+use `livekit-agents`' native MCP integration for argus-mcp servers (that
+integration has no per-tool filtering) - it hand-rolls the MCP client and
+applies `READ_ONLY_TOOLS`, an explicit **allowlist** (not a denylist): any
+tool a future `argus-mcp-server` release adds - including one that doesn't
+exist yet - is excluded by default unless deliberately added to that set.
+Today's exclusions: `set_pv`, `set_pv_value`, `restart_ioc`,
+`execute_procedure` (currently a disarmed stub, excluded pre-emptively
+anyway), `create_logbook_entry` (a write, but low blast-radius - trivial
+to re-include if wanted).
+
+**Before adding any write tool to this agent in a future phase**, both of
+these need to happen, not just one:
+
+1. The agent must gate the tool call behind a `confirm_request`/
+   `confirm_action` round-trip and wait for the operator's answer before
+   calling the underlying MCP tool - `events.py`'s `send_confirm_request()`
+   already speaks the wire format `epik8s-dashboard`'s frontend expects
+   (`src/voice/events.js`), but nothing calls it yet, and the frontend's
+   confirmation banner **never executes anything itself** - it only
+   forwards the operator's choice back over the data channel, so the
+   actual gate has to live server-side, in this agent (or argus-mcp-server
+   itself).
+2. `argus-mcp-server` itself should grow a server-side confirmation/
+   allowlist/rate-limit gate - a voice agent should not be the only thing
+   standing between "the LLM decided to call `set_pv`" and "a real PV
+   changes state on a live accelerator".
+
+### Wiring `epik8s-dashboard` to this
+
+The dashboard's voice module (`src/voice/`, disabled by default there too)
+expects a `voiceAssistant` block under
+`config.epicsConfiguration.services` in the *beamline's own* `values.yaml`
+(a different repo/chart - `epik8s-chart`/`epik8s-btf`, not this one):
+
+```yaml
+epicsConfiguration:
+  services:
+    voiceAssistant:
+      enabled: true
+      tokenEndpoint: "https://<voice-token ingress host>/token"
+      serverUrl: "wss://<livekit-server ingress host>"
+      roomName: "<beamline>-argus-control-room"
+```
+
+`tokenEndpoint`/`serverUrl` are this chart's `aiPlatform.voiceToken.ingress.host`
+/ `aiPlatform.livekit.ingress.host` (both need `ingress.enabled: true` and a
+real DNS host set, same pattern as every other `ingress.host` in this
+chart). `roomName` is free-form - pick one per beamline (or share one
+central room, matching how `argusMcpServers` already centralizes
+per-beamline MCP access into one LibreChat) and pass the same value to
+`aiPlatform.voiceAgent`'s room-join scope... **note this phase's agent
+joins whatever room a token was minted for**, since `voice-token-server.py`
+doesn't validate the room name against an allowlist either (see that
+file's own docstring) - fine while this stays experimental and
+not-yet-linked-from-anywhere-public, revisit before wider rollout.
+
 ## Centralized logging
 
 `logging.loki`/`logging.alloy` add cluster-wide pod log ingestion: Grafana

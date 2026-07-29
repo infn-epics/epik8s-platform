@@ -1,0 +1,146 @@
+"""
+ARGUS voice agent (experimental, READ-ONLY) - a livekit-agents worker
+providing a Jarvis-like voice interface to the accelerator control system.
+
+Wires together:
+  - STT: argus-stt   (OpenAI-compatible faster-whisper, aiPlatform.argusStt)
+  - LLM: litellm gateway (OpenAI-compatible, aiPlatform.litellm)
+  - TTS: argus-tts   (OpenAI-compatible Piper, aiPlatform.argusTts)
+  - Tools:
+      * kubernetes-mcp + rag-mcp via livekit-agents' native MCP
+        integration - their ENTIRE tool surface is exposed as-is, since
+        both are read-only by construction (see mcp.yaml's RBAC / Qdrant
+        read-only client).
+      * one ArgusMcpBridge per configured beamline argus-mcp server
+        (argus_mcp_bridge.py) - an EXPLICIT read-only tool allowlist,
+        since those servers mix read tools with set_pv/set_pv_value/
+        restart_ioc/execute_procedure/create_logbook_entry.
+
+THIS PHASE IS READ-ONLY BY DESIGN. No write/control tool is exposed to the
+LLM. A future write-capable phase must, at minimum:
+  1. gate every write tool call behind events.send_confirm_request() and
+     wait for the matching confirm_action from the dashboard's
+     Conferma/Annulla banner before calling the underlying MCP tool
+     (see events.py's send_confirm_request docstring), AND
+  2. add a server-side confirmation/allowlist/rate-limit gate to
+     argus-mcp-server itself, which has none today - a voice agent must
+     not be the only thing standing between "the LLM decided to call
+     set_pv" and "a real PV changes state", especially since STT
+     mis-transcription (a wrong PV name, a wrong number) is a real failure
+     mode voice interfaces have that text chat mostly doesn't.
+
+API SURFACE NOTE (read before deploying): this targets livekit-agents'
+unified Agent/AgentSession API (~0.12+) and its built-in `mcp` module. The
+exact names/signatures below - `mcp.MCPServerHTTP`, `Agent(tools=,
+mcp_servers=)`, `AgentSession.start(...)`, the `conversation_item_added`
+event and its payload shape - have moved across livekit-agents releases.
+Verify each against the pinned version actually installed (see the `pip
+install` line in templates/ai-platform/voice-agent.yaml) with a real `pip
+show livekit-agents` + a quick smoke test before relying on this in
+production; this was written without the ability to execute-test it
+against a live install.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+
+from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli, mcp
+from livekit.plugins import openai, silero
+
+from argus_mcp_bridge import ArgusMcpBridge, ArgusMcpServerConfig
+from events import send_transcript
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("voice-agent")
+
+STT_BASE_URL = os.environ["STT_BASE_URL"]
+STT_MODEL = os.environ.get("STT_MODEL", "Systran/faster-whisper-base")
+TTS_BASE_URL = os.environ["TTS_BASE_URL"]
+TTS_MODEL = os.environ.get("TTS_MODEL", "speaches-ai/piper-it_IT-riccardo-x_low")
+TTS_VOICE = os.environ.get("TTS_VOICE", "it_IT-riccardo-x_low")
+LLM_BASE_URL = os.environ["LLM_BASE_URL"]
+LLM_MODEL = os.environ.get("LLM_MODEL", "llama3-8b")
+LLM_API_KEY = os.environ.get("LLM_API_KEY", "none")
+
+# Central, read-only-by-construction MCP servers (empty string = disabled).
+KUBERNETES_MCP_URL = os.environ.get("KUBERNETES_MCP_URL", "")
+RAG_MCP_URL = os.environ.get("RAG_MCP_URL", "")
+
+# JSON list of {"name","url","title"} - one entry per beamline argus-mcp
+# server, mirrors aiPlatform.librechat.argusMcpServers in values.yaml
+# (same servers, different consumer). Example:
+#   [{"name":"btf-argus","url":"http://argus-argus-helm-chart-argus-mcp.btf.svc.cluster.local:8000/sse","title":"BTF ARGUS"}]
+ARGUS_MCP_SERVERS = json.loads(os.environ.get("ARGUS_MCP_SERVERS_JSON", "[]"))
+
+SYSTEM_PROMPT = """Sei ARGUS, l'assistente vocale del sistema di controllo dell'acceleratore.
+Rispondi in italiano, in modo breve e chiaro, adatto all'ascolto in sala controllo.
+Puoi consultare stato macchina, valori di PV, storico allarmi, IOC, dispositivi,
+log e documentazione tramite gli strumenti disponibili.
+NON hai la capacità di scrivere su alcuna PV né di riavviare alcun IOC in questa fase:
+se ti viene chiesto di farlo, spiega chiaramente che questa funzione non è ancora
+abilitata su questo canale vocale e che l'azione va eseguita tramite l'interfaccia
+di controllo standard (dashboard o console Phoebus).
+Quando consulti un dispositivo o una PV specifica tramite uno strumento, il fatto che
+quello strumento evidenzi il widget corrispondente sulla dashboard è un effetto
+collaterale intenzionale - non serve menzionarlo all'operatore.
+"""
+
+
+async def entrypoint(ctx: JobContext) -> None:
+    await ctx.connect()
+
+    native_mcp_servers = []
+    if KUBERNETES_MCP_URL:
+        native_mcp_servers.append(mcp.MCPServerHTTP(url=KUBERNETES_MCP_URL))
+    if RAG_MCP_URL:
+        native_mcp_servers.append(mcp.MCPServerHTTP(url=RAG_MCP_URL))
+
+    bridges: list[ArgusMcpBridge] = []
+    argus_tools = []
+    for entry in ARGUS_MCP_SERVERS:
+        cfg = ArgusMcpServerConfig(name=entry["name"], url=entry["url"], title=entry.get("title", entry["name"]))
+        bridge = ArgusMcpBridge(ctx.room, cfg)
+        try:
+            await bridge.connect()
+        except Exception:
+            logger.exception("could not connect to argus-mcp server %s (%s) - skipping it for this session", cfg.name, cfg.url)
+            continue
+        bridges.append(bridge)
+        argus_tools.extend(await bridge.discover_tools())
+
+    async def _cleanup() -> None:
+        for bridge in bridges:
+            await bridge.close()
+
+    ctx.add_shutdown_callback(_cleanup)
+
+    agent = Agent(instructions=SYSTEM_PROMPT, tools=argus_tools, mcp_servers=native_mcp_servers)
+
+    session = AgentSession(
+        stt=openai.STT(base_url=STT_BASE_URL, api_key="none", model=STT_MODEL),
+        llm=openai.LLM(base_url=LLM_BASE_URL, api_key=LLM_API_KEY, model=LLM_MODEL),
+        tts=openai.TTS(base_url=TTS_BASE_URL, api_key="none", model=TTS_MODEL, voice=TTS_VOICE),
+        vad=silero.VAD.load(),
+    )
+
+    @session.on("conversation_item_added")
+    def _on_conversation_item(event) -> None:
+        # Mirror every completed turn onto the data channel as a `final:
+        # true` transcript event, matching TranscriptPanel's expectations
+        # in epik8s-dashboard (partial/streaming transcript is left for a
+        # follow-up - see events.py).
+        item = event.item
+        role = "assistant" if getattr(item, "role", None) == "assistant" else "user"
+        text = getattr(item, "text_content", None) or ""
+        if not text:
+            return
+        asyncio.create_task(send_transcript(ctx.room, role, text, final=True))
+
+    await session.start(agent=agent, room=ctx.room)
+
+
+if __name__ == "__main__":
+    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))

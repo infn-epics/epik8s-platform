@@ -1,0 +1,124 @@
+{{- /*
+LiveKit token-minting endpoint for the experimental voice assistant - see
+files/ai-platform/voice-token-server.py and README's "Voice Assistant"
+section. Unlike kubernetes-mcp/rag-mcp (consumed server-side by LibreChat),
+this IS called directly from the operator's browser
+(epik8s-dashboard's VoiceRoomClient), so it needs external ingress
+reachability, not just a ClusterIP.
+
+Reads the same aiPlatform.livekit.existingSecret Secret as livekit.yaml
+(api-key/api-secret keys) - keep both templates' secret name in sync if you
+change aiPlatform.livekit.existingSecret.
+*/ -}}
+{{- if and .Values.aiPlatform.enabled .Values.aiPlatform.voiceToken.enabled }}
+{{- $ns := .Values.aiPlatform.namespace }}
+{{- $v := .Values.aiPlatform.voiceToken }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: voice-token-code
+  namespace: {{ $ns }}
+data:
+  server.py: |
+{{ .Files.Get "files/ai-platform/voice-token-server.py" | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voice-token
+  namespace: {{ $ns }}
+  labels:
+    app: voice-token
+spec:
+  replicas: {{ $v.replicas }}
+  selector:
+    matchLabels:
+      app: voice-token
+  template:
+    metadata:
+      labels:
+        app: voice-token
+    spec:
+      containers:
+        - name: server
+          image: {{ $v.image }}
+          command: ["sh", "-lc"]
+          args: ["pip install --no-cache-dir pyjwt && python /app/server.py"]
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: LIVEKIT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.aiPlatform.livekit.existingSecret }}
+                  key: api-key
+            - name: LIVEKIT_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.aiPlatform.livekit.existingSecret }}
+                  key: api-secret
+            - name: TOKEN_TTL_SECONDS
+              value: {{ $v.tokenTtlSeconds | quote }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+          resources:
+            {{- toYaml $v.resources | nindent 12 }}
+          volumeMounts:
+            - name: voice-token-code
+              mountPath: /app/server.py
+              subPath: server.py
+      volumes:
+        - name: voice-token-code
+          configMap:
+            name: voice-token-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: voice-token
+  namespace: {{ $ns }}
+spec:
+  type: ClusterIP
+  selector:
+    app: voice-token
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+{{- if $v.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: voice-token
+  namespace: {{ $ns }}
+spec:
+  ingressClassName: {{ $.Values.aiPlatform.ingress.className }}
+  tls:
+    - hosts:
+        - {{ $v.ingress.host }}
+      secretName: {{ $.Values.aiPlatform.ingress.tlsSecretName }}
+  rules:
+    - host: {{ $v.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: voice-token
+                port:
+                  number: 8080
+{{- end }}
+{{- end }}

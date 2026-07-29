@@ -1,0 +1,123 @@
+{{- /*
+The ARGUS voice agent worker (experimental, READ-ONLY tools only - see
+files/ai-platform/voice-agent/agent.py's module docstring and README's
+"Voice Assistant" section for the full safety writeup). A livekit-agents
+worker process: it registers itself with livekit-server and receives job
+dispatches for each voice session, it is not itself reached over HTTP, so
+no Service/Ingress here.
+
+argusMcpServers reuses aiPlatform.librechat.argusMcpServers (same beamline
+argus-mcp deployments LibreChat already talks to) rather than duplicating
+that list - the URL-construction formula below is copied verbatim from
+templates/ai-platform/librechat.yaml's own argusMcpServers handling to stay
+consistent if that convention ever changes.
+*/ -}}
+{{- if and .Values.aiPlatform.enabled .Values.aiPlatform.voiceAgent.enabled }}
+{{- $ns := .Values.aiPlatform.namespace }}
+{{- $v := .Values.aiPlatform.voiceAgent }}
+{{- $lc := .Values.aiPlatform.librechat }}
+{{- $mcp := .Values.aiPlatform.mcp }}
+{{- $argusMcpEntries := list }}
+{{- range $lc.argusMcpServers }}
+{{- $url := printf "http://%s.%s.svc.cluster.local:%v%s" .serviceName .namespace (.port | default 8000) (.path | default "/sse") }}
+{{- $argusMcpEntries = append $argusMcpEntries (dict "name" .name "url" $url "title" (.title | default .name)) }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: voice-agent-code
+  namespace: {{ $ns }}
+data:
+  agent.py: |
+{{ .Files.Get "files/ai-platform/voice-agent/agent.py" | indent 4 }}
+  argus_mcp_bridge.py: |
+{{ .Files.Get "files/ai-platform/voice-agent/argus_mcp_bridge.py" | indent 4 }}
+  events.py: |
+{{ .Files.Get "files/ai-platform/voice-agent/events.py" | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voice-agent
+  namespace: {{ $ns }}
+  labels:
+    app: voice-agent
+spec:
+  ## livekit-agents workers register with livekit-server and pull job
+  ## dispatches - multiple replicas just means more capacity for
+  ## concurrent voice sessions, no leader election needed.
+  replicas: {{ $v.replicas }}
+  selector:
+    matchLabels:
+      app: voice-agent
+  template:
+    metadata:
+      labels:
+        app: voice-agent
+    spec:
+      containers:
+        - name: voice-agent
+          image: {{ $v.image }}
+          command: ["sh", "-lc"]
+          args:
+            - >-
+              pip install --no-cache-dir
+              "livekit-agents>=0.12,<2" livekit-plugins-openai livekit-plugins-silero "mcp>=1.0"
+              && python /app/agent.py start
+          env:
+            - name: LIVEKIT_URL
+              value: "ws://livekit-server.{{ $ns }}.svc.cluster.local:7880"
+            - name: LIVEKIT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.aiPlatform.livekit.existingSecret }}
+                  key: api-key
+            - name: LIVEKIT_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.aiPlatform.livekit.existingSecret }}
+                  key: api-secret
+            - name: STT_BASE_URL
+              value: "http://argus-stt.{{ $ns }}.svc.cluster.local:8000/v1"
+            - name: STT_MODEL
+              value: {{ $.Values.aiPlatform.argusStt.sttModel | quote }}
+            - name: TTS_BASE_URL
+              value: "http://argus-tts.{{ $ns }}.svc.cluster.local:8000/v1"
+            - name: TTS_MODEL
+              value: {{ $v.ttsModel | quote }}
+            - name: TTS_VOICE
+              value: {{ $v.ttsVoice | quote }}
+            - name: LLM_BASE_URL
+              value: "http://litellm.{{ $ns }}.svc.cluster.local:4000/v1"
+            - name: LLM_MODEL
+              value: {{ $v.llmModel | quote }}
+            - name: LLM_API_KEY
+              value: {{ $v.llmApiKey | quote }}
+            {{- if $mcp.kubernetesMcp.enabled }}
+            - name: KUBERNETES_MCP_URL
+              value: "http://kubernetes-mcp.{{ $ns }}.svc.cluster.local:8080/mcp"
+            {{- end }}
+            {{- if $mcp.ragMcp.enabled }}
+            - name: RAG_MCP_URL
+              value: "http://rag-mcp.{{ $ns }}.svc.cluster.local:8080/mcp"
+            {{- end }}
+            - name: ARGUS_MCP_SERVERS_JSON
+              value: {{ $argusMcpEntries | toJson | quote }}
+            {{- if $.Values.aiPlatform.proxy.enabled }}
+            - name: HTTP_PROXY
+              value: {{ $.Values.aiPlatform.proxy.httpProxy }}
+            - name: HTTPS_PROXY
+              value: {{ $.Values.aiPlatform.proxy.httpsProxy }}
+            - name: NO_PROXY
+              value: {{ $.Values.aiPlatform.proxy.noProxy }}
+            {{- end }}
+          resources:
+            {{- toYaml $v.resources | nindent 12 }}
+          volumeMounts:
+            - name: voice-agent-code
+              mountPath: /app
+      volumes:
+        - name: voice-agent-code
+          configMap:
+            name: voice-agent-code
+{{- end }}

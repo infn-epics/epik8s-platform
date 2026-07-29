@@ -1,0 +1,158 @@
+{{- /*
+LiveKit server (experimental voice assistant, see README's "Voice
+Assistant" section) - single-node, no Redis/HA (aiPlatform.livekit.replicas
+should stay 1 unless a redis: block is added to configYaml and a shared
+Redis instance is wired in - LiveKit needs that to coordinate multiple
+nodes, which this chart does not set up).
+
+Secret aiPlatform.livekit.existingSecret is expected to already exist in
+the ai-platform namespace (provisioned out of band, see README's "Secrets
+handling") with THREE keys:
+  api-key    - the LiveKit API key (also used by the voice-token service)
+  api-secret - the matching API secret (also used by the voice-token service)
+  keys-line  - the same pair in LiveKit's own "key: secret" config format,
+               e.g. "devkey: supersecretvalue" - this is what actually gets
+               injected as LIVEKIT_KEYS. Kept as a separate key rather than
+               composed at render time because Helm never sees Secret
+               content (see README) - the provisioner must set all three
+               consistently.
+
+Networking caveat (read before deploying): port 7880 (HTTP/WS signaling)
+works fine behind the shared ingress-nginx. The RTC media path (TCP 7881
+fallback + a UDP port range) does NOT work through a normal HTTP(S)
+ingress - it needs a real reachable IP/port, hence the separate
+`livekit-rtc` Service below defaulting to `type: LoadBalancer`. Whether
+that actually gets a public IP/works through NAT depends entirely on the
+target cluster/cloud - this is the single most environment-specific part
+of this whole component. See LiveKit's own self-hosting docs for
+TURN/TLS-over-443 fallback options if UDP is blocked for end users.
+*/ -}}
+{{- if and .Values.aiPlatform.enabled .Values.aiPlatform.livekit.enabled }}
+{{- $ns := .Values.aiPlatform.namespace }}
+{{- $v := .Values.aiPlatform.livekit }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: livekit-config
+  namespace: {{ $ns }}
+data:
+  config.yaml: |
+{{ $v.configYaml | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: livekit-server
+  namespace: {{ $ns }}
+  labels:
+    app: livekit-server
+spec:
+  replicas: {{ $v.replicas }}
+  selector:
+    matchLabels:
+      app: livekit-server
+  template:
+    metadata:
+      labels:
+        app: livekit-server
+    spec:
+      containers:
+        - name: livekit-server
+          image: {{ $v.image }}
+          args: ["--config", "/etc/livekit/config.yaml"]
+          ports:
+            - name: http
+              containerPort: 7880
+              protocol: TCP
+            - name: rtc-tcp
+              containerPort: 7881
+              protocol: TCP
+            - name: rtc-udp-start
+              containerPort: {{ $v.rtc.portRangeStart }}
+              protocol: UDP
+          env:
+            - name: LIVEKIT_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $v.existingSecret }}
+                  key: keys-line
+          resources:
+            {{- toYaml $v.resources | nindent 12 }}
+          volumeMounts:
+            - name: livekit-config
+              mountPath: /etc/livekit
+      volumes:
+        - name: livekit-config
+          configMap:
+            name: livekit-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: livekit-server
+  namespace: {{ $ns }}
+spec:
+  type: ClusterIP
+  selector:
+    app: livekit-server
+  ports:
+    - name: http
+      port: 7880
+      targetPort: http
+      protocol: TCP
+---
+# RTC media path - see the networking caveat at the top of this file.
+apiVersion: v1
+kind: Service
+metadata:
+  name: livekit-rtc
+  namespace: {{ $ns }}
+  {{- if $v.rtc.serviceAnnotations }}
+  annotations:
+    {{- toYaml $v.rtc.serviceAnnotations | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $v.rtc.serviceType }}
+  selector:
+    app: livekit-server
+  ports:
+    - name: rtc-tcp
+      port: 7881
+      targetPort: rtc-tcp
+      protocol: TCP
+    - name: rtc-udp
+      port: {{ $v.rtc.portRangeStart }}
+      targetPort: {{ $v.rtc.portRangeStart }}
+      protocol: UDP
+{{- if $v.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: livekit-server
+  namespace: {{ $ns }}
+  annotations:
+    ## WebSocket signaling is a long-lived connection - the default nginx
+    ## proxy timeouts (60s) would otherwise silently drop idle voice
+    ## sessions.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: {{ $.Values.aiPlatform.ingress.className }}
+  tls:
+    - hosts:
+        - {{ $v.ingress.host }}
+      secretName: {{ $.Values.aiPlatform.ingress.tlsSecretName }}
+  rules:
+    - host: {{ $v.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: livekit-server
+                port:
+                  number: 7880
+{{- end }}
+{{- end }}

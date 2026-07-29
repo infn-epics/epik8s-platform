@@ -377,6 +377,71 @@ aiPlatform:
       requests: { cpu: "1", memory: 2Gi }
       limits: { cpu: "2", memory: 3Gi }
 
+  ## Experimental Jarvis-like voice assistant (LiveKit server + a
+  ## read-only-tools voice agent + a token-minting endpoint), see README's
+  ## "Voice Assistant" section for the full architecture and - important -
+  ## the safety writeup on why the agent's MCP tool access is an explicit
+  ## read-only allowlist rather than the full argus-mcp tool surface.
+  ## Disabled by default: this is new, unreviewed infrastructure, and the
+  ## LiveKit RTC networking (livekit.rtc.*) needs environment-specific
+  ## tuning before it will actually work end-to-end - see livekit.yaml's
+  ## header comment.
+  livekit:
+    enabled: false
+    image: livekit/livekit-server:v1.8
+    replicas: 1 ## no Redis/HA wired up - keep at 1, see livekit.yaml
+    ## Secret with api-key/api-secret/keys-line - provisioned out of band,
+    ## see README's "Secrets handling" and livekit.yaml's header comment.
+    existingSecret: livekit-server-secrets
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits: { cpu: "1", memory: 1Gi }
+    rtc:
+      portRangeStart: 50000
+      portRangeEnd: 50100
+      ## LoadBalancer is the only Service type that can carry the UDP RTC
+      ## media path outside the cluster on most providers - NodePort works
+      ## too if you have your own external LB/firewall rules. See
+      ## livekit.yaml's header comment before changing this.
+      serviceType: LoadBalancer
+      serviceAnnotations: {}
+    ingress:
+      enabled: false
+      host: ""
+    configYaml: |
+      port: 7880
+      rtc:
+        tcp_port: 7881
+        port_range_start: 50000
+        port_range_end: 50100
+        use_external_ip: false
+      logging:
+        level: info
+
+  voiceToken:
+    enabled: false
+    image: python:3.11-slim
+    replicas: 2
+    tokenTtlSeconds: 21600 ## 6h
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 256Mi }
+    ingress:
+      enabled: false
+      host: ""
+
+  voiceAgent:
+    enabled: false
+    image: python:3.11-slim
+    replicas: 1
+    llmModel: "llama3-8b" ## must match an aiPlatform.litellm.configYaml model_name
+    llmApiKey: "none" ## matches litellm's own model entry (api_key: none) - see values.yaml's litellm.configYaml
+    ttsModel: "speaches-ai/piper-it_IT-riccardo-x_low" ## must match aiPlatform.librechat.speech.tts.model
+    ttsVoice: "it_IT-riccardo-x_low"
+    resources:
+      requests: { cpu: 500m, memory: 1Gi }
+      limits: { cpu: "2", memory: 2Gi }
+
   embeddings:
     enabled: true
     ## placeholder image until a real embeddings backend is deployed, see README.
