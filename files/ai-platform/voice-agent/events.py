@@ -2,6 +2,14 @@
 Data-channel event senders matching the JSON schema documented in the
 epik8s-dashboard frontend (src/voice/events.js, src/voice/README.md). Keep
 these two in sync - this module IS the server side of that wire contract.
+
+`phase` and `transcript`'s `metrics` field (both added for the Jarvis-like
+animation/debug-latency-panel feature) carry a documented quirk: `llm`
+phase events may fire more than one start/end pair for a single turn_id
+when the model performs a tool call mid-turn (confirmed live against
+livekit-agents 1.6.7 - see agent.py's ArgusAgent.llm_node). Frontend
+reducers must treat this as normal, not an error - see
+src/voice/events.js's reducePhaseEvent.
 """
 from __future__ import annotations
 
@@ -15,6 +23,7 @@ EVENT_HIGHLIGHT = "highlight"
 EVENT_TRANSCRIPT = "transcript"
 EVENT_CONFIRM_REQUEST = "confirm_request"
 EVENT_CONFIRM_ACTION = "confirm_action"
+EVENT_PHASE = "phase"
 
 DEFAULT_HIGHLIGHT_TTL_MS = 8000
 
@@ -46,13 +55,58 @@ async def send_highlight(
     })
 
 
-async def send_transcript(room: rtc.Room, role: str, text: str, final: bool) -> None:
-    """role must be 'user' or 'assistant', matching isTranscriptEvent()."""
-    await _publish(room, {
+async def send_transcript(
+    room: rtc.Room,
+    role: str,
+    text: str,
+    final: bool,
+    metrics: dict[str, float] | None = None,
+) -> None:
+    """role must be 'user' or 'assistant', matching isTranscriptEvent().
+
+    metrics, when given, is a flat {field_name: milliseconds} dict (see
+    agent.py's _on_conversation_item for the exact fields per role) -
+    omitted entirely from the payload when None/empty, not sent as
+    null/{}, so existing frontend fixtures/tests that don't expect this
+    key stay valid.
+    """
+    payload: dict[str, Any] = {
         "type": EVENT_TRANSCRIPT,
         "role": role,
         "text": text,
         "final": final,
+        "ts": int(time.time() * 1000),
+    }
+    if metrics:
+        payload["metrics"] = metrics
+    await _publish(room, payload)
+
+
+async def send_phase(room: rtc.Room, turn_id: str, phase: str, edge: str) -> None:
+    """Real-time, fine-grained phase-transition events driving the
+    frontend's Jarvis-like animation and per-phase latency display.
+
+    phase: 'stt' | 'llm' | 'tts'. edge: 'start' | 'end'. Emitted from
+    ArgusAgent's stt_node/llm_node/tts_node overrides in agent.py.
+
+    CAVEAT: 'llm' may emit more than one start/end pair for one turn_id if
+    the model performs a tool call mid-turn (confirmed live via
+    livekit-agents 1.6.7's agent_activity.py max_tool_steps loop) - a
+    second 'start' while already open is a no-op for duration purposes,
+    only the *last* 'end' closes the phase (see the frontend's
+    reducePhaseEvent for the exact semantics).
+
+    CAVEAT: 'stt' 'start' fires when the user's mic audio track ends
+    (button released), not when stt_node was first invoked - the latter
+    spans the entire mic-hold window and would be a misleading signal for
+    an animation meant to show "the system is now processing your
+    speech".
+    """
+    await _publish(room, {
+        "type": EVENT_PHASE,
+        "turn_id": turn_id,
+        "phase": phase,
+        "edge": edge,
         "ts": int(time.time() * 1000),
     })
 

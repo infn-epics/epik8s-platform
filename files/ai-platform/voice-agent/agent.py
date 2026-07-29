@@ -39,6 +39,23 @@ install` line in templates/ai-platform/voice-agent.yaml) with a real `pip
 show livekit-agents` + a quick smoke test before relying on this in
 production; this was written without the ability to execute-test it
 against a live install.
+
+Confirmed live 2026-07-29 against the actually-installed livekit-agents
+1.6.7 (the `pip install` line still floats `>=0.12,<2` - re-verify if
+that range ever resolves to a materially different minor version):
+`Agent.default.stt_node`/`llm_node`/`tts_node` are all genuine async
+generator functions (`inspect.isasyncgenfunction` True) - calling them
+returns an async generator directly, no `await` needed on the call
+itself, only on iteration. `llm_node`'s signature is
+`(agent, chat_ctx: llm.ChatContext, tools: list[llm.Tool],
+model_settings)`, NOT a text-stream like tts_node's - do not assume
+symmetry between the three node signatures. `get_job_context(required=
+False)` returns `JobContext | None` instead of raising, safe to call
+from inside these node overrides via the contextvar it reads.
+`ChatMessage.metrics` is a pydantic field whose value is a
+`TypedDict(total=False)` (`MetricsReport`) - always a plain dict at
+runtime (never None, has a default_factory), but every key is optional,
+so always use `.get(...)`, never `[...]` or `.model_dump()`.
 """
 from __future__ import annotations
 
@@ -47,16 +64,17 @@ import json
 import logging
 import os
 import re
+import uuid
 from typing import AsyncIterable
 
 import httpx
 import openai as openai_sdk
-from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli, mcp
+from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli, get_job_context, mcp
 from livekit.plugins import openai, silero
 from livekit.plugins.openai.tts import AUDIO_STREAM_MODELS as _OPENAI_AUDIO_STREAM_MODELS
 
 from argus_mcp_bridge import ArgusMcpBridge, ArgusMcpServerConfig
-from events import send_transcript
+from events import send_phase, send_transcript
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("voice-agent")
@@ -145,8 +163,90 @@ collaterale intenzionale - non serve menzionarlo all'operatore.
 _MARKDOWN_NOISE_LINE = re.compile(r"^\s*([-=*#_~]{2,}|[-*•]\s*)\s*$")
 
 
+def _emit_phase(turn_id: str, phase: str, edge: str) -> None:
+    """Fire-and-forget phase-transition event, matching the fire-and-forget
+    convention already used for send_highlight in argus_mcp_bridge.py. A
+    missing job context (shouldn't happen inside a running job, but costs
+    nothing to guard) just means the animation misses a beat - never worth
+    breaking the actual voice turn over."""
+    ctx = get_job_context(required=False)
+    if ctx is None:
+        return
+    asyncio.create_task(send_phase(ctx.room, turn_id, phase, edge))
+
+
+def _extract_metrics(item) -> dict[str, float] | None:
+    """Flatten a ChatMessage's MetricsReport (see this module's API SURFACE
+    NOTE) into a {field_name_ms: milliseconds} dict for send_transcript,
+    picking the field set by role - assistant turns carry LLM/TTS/e2e
+    timing, user turns carry STT/turn-detection timing. Returns None if
+    nothing usable was present, so callers can skip the payload field
+    entirely rather than sending an empty dict."""
+    raw = getattr(item, "metrics", None)
+    if not raw:
+        return None
+
+    def _ms(key: str) -> float | None:
+        val = raw.get(key)
+        return round(val * 1000, 1) if val is not None else None
+
+    if getattr(item, "role", None) == "assistant":
+        fields = {
+            "llm_ttft_ms": _ms("llm_node_ttft"),
+            "tts_ttfb_ms": _ms("tts_node_ttfb"),
+            "e2e_latency_ms": _ms("e2e_latency"),
+            "playback_latency_ms": _ms("playback_latency"),
+        }
+    else:
+        fields = {
+            "transcription_delay_ms": _ms("transcription_delay"),
+            "end_of_turn_delay_ms": _ms("end_of_turn_delay"),
+            "on_user_turn_completed_delay_ms": _ms("on_user_turn_completed_delay"),
+        }
+    fields = {k: v for k, v in fields.items() if v is not None}
+    return fields or None
+
+
 class ArgusAgent(Agent):
+    async def stt_node(self, audio, model_settings):
+        turn_id = uuid.uuid4().hex
+        self._current_turn_id = turn_id
+
+        async def _timed_audio() -> AsyncIterable:
+            async for frame in audio:
+                yield frame
+            # Deliberately emitted here, not at stt_node invocation time
+            # (which spans the whole mic-hold window) - this is the moment
+            # the mic track actually ends (button released), which is what
+            # "the system is now processing your speech" should mean to
+            # the animation.
+            _emit_phase(turn_id, "stt", "start")
+
+        try:
+            async for event in Agent.default.stt_node(self, _timed_audio(), model_settings):
+                yield event
+        finally:
+            _emit_phase(turn_id, "stt", "end")
+
+    async def llm_node(self, chat_ctx, tools, model_settings):
+        # Falls back to a fresh id if llm_node is ever invoked without a
+        # preceding stt_node call in this turn (not expected in the
+        # current push-to-talk flow, but cheap to guard). Reused as-is
+        # across repeated invocations within one user turn when the model
+        # performs a tool call (confirmed live - see this module's API
+        # SURFACE NOTE) - the frontend's reducer treats repeated
+        # start/end pairs for one turn_id as normal, not an error.
+        turn_id = getattr(self, "_current_turn_id", None) or uuid.uuid4().hex
+        _emit_phase(turn_id, "llm", "start")
+        try:
+            async for chunk in Agent.default.llm_node(self, chat_ctx, tools, model_settings):
+                yield chunk
+        finally:
+            _emit_phase(turn_id, "llm", "end")
+
     async def tts_node(self, text, model_settings):
+        turn_id = getattr(self, "_current_turn_id", None) or uuid.uuid4().hex
+
         async def _sanitized() -> AsyncIterable[str]:
             async for chunk in text:
                 lines = [ln for ln in chunk.splitlines() if not _MARKDOWN_NOISE_LINE.match(ln)]
@@ -154,7 +254,12 @@ class ArgusAgent(Agent):
                 if cleaned.strip():
                     yield cleaned
 
-        return Agent.default.tts_node(self, _sanitized(), model_settings)
+        _emit_phase(turn_id, "tts", "start")
+        try:
+            async for frame in Agent.default.tts_node(self, _sanitized(), model_settings):
+                yield frame
+        finally:
+            _emit_phase(turn_id, "tts", "end")
 
 
 async def entrypoint(ctx: JobContext) -> None:
@@ -208,7 +313,8 @@ async def entrypoint(ctx: JobContext) -> None:
         text = getattr(item, "text_content", None) or ""
         if not text:
             return
-        asyncio.create_task(send_transcript(ctx.room, role, text, final=True))
+        metrics = _extract_metrics(item)
+        asyncio.create_task(send_transcript(ctx.room, role, text, final=True, metrics=metrics))
 
     await session.start(agent=agent, room=ctx.room)
 
