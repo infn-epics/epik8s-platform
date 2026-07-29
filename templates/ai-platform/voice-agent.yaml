@@ -89,11 +89,23 @@ spec:
             - name: TTS_VOICE
               value: {{ $v.ttsVoice | quote }}
             - name: LLM_BASE_URL
-              value: "http://litellm.{{ $ns }}.svc.cluster.local:4000/v1"
+              value: {{ $v.llmBaseUrl | default (printf "http://litellm.%s.svc.cluster.local:4000/v1" $ns) | quote }}
             - name: LLM_MODEL
               value: {{ $v.llmModel | quote }}
+            {{- if $v.llmApiKeySecretName }}
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $v.llmApiKeySecretName }}
+                  key: {{ $v.llmApiKeySecretKey }}
+            {{- else }}
             - name: LLM_API_KEY
               value: {{ $v.llmApiKey | quote }}
+            {{- end }}
+            {{- if $v.llmHttpProxy }}
+            - name: LLM_HTTP_PROXY
+              value: {{ $v.llmHttpProxy | quote }}
+            {{- end }}
             {{- if $mcp.kubernetesMcp.enabled }}
             - name: KUBERNETES_MCP_URL
               value: "http://kubernetes-mcp.{{ $ns }}.svc.cluster.local:8080/mcp"

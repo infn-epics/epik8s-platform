@@ -641,6 +641,29 @@ aiPlatform:
     rtc:
       nodeIp: "192.168.108.224"
 
+  ## Confirmed live 2026-07-29: neither aiPlatform.litellm nor a vLLM
+  ## backend is actually deployed on k8sda - LibreChat's own live config
+  ## (argus-librechat-config ConfigMap) doesn't route through them either;
+  ## its real default endpoint is this external AI-Gateway-90, model
+  ## minimax-m27. Pointing the voice agent at the SAME default rather than
+  ## standing up a redundant in-cluster LLM: reuses infra that's already
+  ## proven working, and reuses the existing argus-librechat-credentials
+  ## Secret's AIGW_90_API_KEY rather than provisioning a new one.
+  voiceAgent:
+    enabled: true
+    llmBaseUrl: "https://ai-gateway.131.154.99.90.myip.cloud.infn.it/v1"
+    llmModel: "minimax-m27"
+    llmApiKeySecretName: "argus-librechat-credentials"
+    llmApiKeySecretKey: "AIGW_90_API_KEY"
+    ## External host, not in-cluster - needs the outbound proxy, same as
+    ## LibreChat's own request to this same gateway (see its configenv's
+    ## HTTPS_PROXY). Deliberately NOT the same mechanism as
+    ## aiPlatform.proxy.enabled - see agent.py's LLM_HTTP_PROXY comment.
+    llmHttpProxy: "http://squid.lnf.infn.it:3128"
+
+  voiceToken:
+    enabled: true
+
   mcp:
     ## Neither kubernetes-mcp nor rag-mcp is actually deployed on k8sda yet
     ## (no mcp.yaml apply has ever been done here) - values.yaml's

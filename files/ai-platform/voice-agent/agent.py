@@ -47,6 +47,8 @@ import json
 import logging
 import os
 
+import httpx
+import openai as openai_sdk
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli, mcp
 from livekit.plugins import openai, silero
 
@@ -64,6 +66,15 @@ TTS_VOICE = os.environ.get("TTS_VOICE", "it_IT-riccardo-x_low")
 LLM_BASE_URL = os.environ["LLM_BASE_URL"]
 LLM_MODEL = os.environ.get("LLM_MODEL", "llama3-8b")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "none")
+# Only the LLM call needs a proxy - it's the one endpoint that (for the
+# k8sda site) is an external HTTPS gateway rather than an in-cluster
+# Service. Deliberately NOT read from HTTP_PROXY/HTTPS_PROXY: those are
+# unset before this process starts (see __main__ below) specifically so
+# livekit-agents' own worker-registration and per-job Room.connect() calls
+# (both in-cluster, both LiveKit-internal proxy handling that ignores
+# NO_PROXY) never see them. This is a separate, explicit opt-in so the LLM
+# client can go through the proxy without reopening that bug.
+LLM_HTTP_PROXY = os.environ.get("LLM_HTTP_PROXY", "")
 
 # Central, read-only-by-construction MCP servers (empty string = disabled).
 KUBERNETES_MCP_URL = os.environ.get("KUBERNETES_MCP_URL", "")
@@ -119,9 +130,12 @@ async def entrypoint(ctx: JobContext) -> None:
 
     agent = Agent(instructions=SYSTEM_PROMPT, tools=argus_tools, mcp_servers=native_mcp_servers)
 
+    llm_http_client = httpx.AsyncClient(proxy=LLM_HTTP_PROXY) if LLM_HTTP_PROXY else None
+    llm_client = openai_sdk.AsyncClient(base_url=LLM_BASE_URL, api_key=LLM_API_KEY, http_client=llm_http_client)
+
     session = AgentSession(
         stt=openai.STT(base_url=STT_BASE_URL, api_key="none", model=STT_MODEL),
-        llm=openai.LLM(base_url=LLM_BASE_URL, api_key=LLM_API_KEY, model=LLM_MODEL),
+        llm=openai.LLM(model=LLM_MODEL, client=llm_client),
         tts=openai.TTS(base_url=TTS_BASE_URL, api_key="none", model=TTS_MODEL, voice=TTS_VOICE),
         vad=silero.VAD.load(),
     )

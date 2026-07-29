@@ -448,8 +448,25 @@ aiPlatform:
     enabled: false
     image: python:3.11-slim
     replicas: 1
+    ## Default: this site's own in-cluster litellm gateway (empty = derived
+    ## as http://litellm.<namespace>.svc.cluster.local:4000/v1). Override to
+    ## point at any other OpenAI-compatible endpoint instead - e.g. an
+    ## external gateway also used as one of aiPlatform.librechat's
+    ## endpoints.custom entries, matching LibreChat's own default model
+    ## rather than requiring a dedicated in-cluster LLM deployment.
+    llmBaseUrl: ""
     llmModel: "llama3-8b" ## must match an aiPlatform.litellm.configYaml model_name
     llmApiKey: "none" ## matches litellm's own model entry (api_key: none) - see values.yaml's litellm.configYaml
+    ## Only set these two if llmBaseUrl needs credentials from an existing
+    ## Secret (e.g. reusing aiPlatform.librechat's own gateway API key)
+    ## rather than the plain llmApiKey string above.
+    llmApiKeySecretName: ""
+    llmApiKeySecretKey: ""
+    ## Only set if llmBaseUrl is reachable through the outbound proxy (an
+    ## external host) rather than in-cluster - see agent.py's LLM_HTTP_PROXY
+    ## comment for why this is separate from aiPlatform.proxy.* and not
+    ## simply ambient HTTP_PROXY/HTTPS_PROXY env vars.
+    llmHttpProxy: ""
     ttsModel: "speaches-ai/piper-it_IT-riccardo-x_low" ## must match aiPlatform.librechat.speech.tts.model
     ttsVoice: "it_IT-riccardo-x_low"
     resources:
