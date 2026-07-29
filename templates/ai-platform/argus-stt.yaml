@@ -64,6 +64,17 @@ spec:
           env:
             - name: WHISPER__MODEL
               value: {{ $v.sttModel | quote }}
+            # Confirmed live 2026-07-29: speaches' default ttl=300 unloads
+            # the model after 5 minutes idle to free GPU memory - fine for
+            # the small "base" model (loads in ~1-2s), but large-v3 (used
+            # here for better Italian accuracy, see values-k8sda.yaml)
+            # takes ~27.5s to reload from scratch, which the debug latency
+            # panel surfaced as a very real "STT è un po' alto" on any
+            # turn after a >5min gap. -1 = never unload (WhisperConfig.ttl
+            # docstring). This node's GPU has ample headroom - large-v3
+            # resident uses ~4.3GB of 15.3GB total.
+            - name: WHISPER__TTL
+              value: "-1"
             {{- if $.Values.aiPlatform.proxy.enabled }}
             - name: HTTP_PROXY
               value: {{ $.Values.aiPlatform.proxy.httpProxy }}
