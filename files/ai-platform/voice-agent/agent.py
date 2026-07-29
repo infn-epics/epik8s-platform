@@ -69,7 +69,7 @@ from typing import AsyncIterable
 
 import httpx
 import openai as openai_sdk
-from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli, get_job_context, mcp
+from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli, get_job_context, mcp, stt
 from livekit.plugins import openai, silero
 from livekit.plugins.openai.tts import AUDIO_STREAM_MODELS as _OPENAI_AUDIO_STREAM_MODELS
 
@@ -209,24 +209,31 @@ def _extract_metrics(item) -> dict[str, float] | None:
 
 class ArgusAgent(Agent):
     async def stt_node(self, audio, model_settings):
-        turn_id = uuid.uuid4().hex
-        self._current_turn_id = turn_id
-
-        async def _timed_audio() -> AsyncIterable:
-            async for frame in audio:
-                yield frame
-            # Deliberately emitted here, not at stt_node invocation time
-            # (which spans the whole mic-hold window) - this is the moment
-            # the mic track actually ends (button released), which is what
-            # "the system is now processing your speech" should mean to
-            # the animation.
-            _emit_phase(turn_id, "stt", "start")
-
-        try:
-            async for event in Agent.default.stt_node(self, _timed_audio(), model_settings):
-                yield event
-        finally:
-            _emit_phase(turn_id, "stt", "end")
+        # Confirmed live: our STT plugin is non-streaming
+        # (STTCapabilities(streaming=False, ...)), so livekit-agents wraps
+        # it in its own StreamAdapter (stt/stream_adapter.py) - the audio
+        # INPUT iterable is fed continuously for the whole job, it does
+        # NOT end per-utterance, so wrapping/watching it for exhaustion
+        # (an earlier version of this method did that) never fires per
+        # turn. The real per-utterance signal is in the OUTPUT SpeechEvent
+        # stream instead: StreamAdapter emits END_OF_SPEECH (VAD detected
+        # the user stopped talking, about to call the STT backend) then,
+        # once the HTTP call returns, FINAL_TRANSCRIPT (recognition done)
+        # - exactly the start/end pair we want for "how long did
+        # transcription actually take". A fresh turn_id is minted on each
+        # END_OF_SPEECH, since stt_node runs once for the whole session,
+        # not once per turn - llm_node/tts_node read it back via
+        # self._current_turn_id.
+        async for event in Agent.default.stt_node(self, audio, model_settings):
+            if event.type == stt.SpeechEventType.END_OF_SPEECH:
+                turn_id = uuid.uuid4().hex
+                self._current_turn_id = turn_id
+                _emit_phase(turn_id, "stt", "start")
+            elif event.type == stt.SpeechEventType.FINAL_TRANSCRIPT:
+                turn_id = getattr(self, "_current_turn_id", None)
+                if turn_id:
+                    _emit_phase(turn_id, "stt", "end")
+            yield event
 
     async def llm_node(self, chat_ctx, tools, model_settings):
         # Falls back to a fresh id if llm_node is ever invoked without a
