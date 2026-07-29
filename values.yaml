@@ -27,10 +27,17 @@ storage:
 ## via Loki: ~140 unrelated pods across multiple nodes hitting "failed to
 ## create fsnotify watcher: too many open files" from
 ## fs.inotify.max_user_instances stuck at the Linux kernel default of 128).
+## Raised 1024 -> 2048 after a live full-node reboot (plk8sdadom001,
+## 2026-07-29): a reboot restarts every container on the node near-
+## simultaneously, and the resulting inotify-instance burst (1036 held by
+## containerd-shim, all UID 0) transiently exceeded 1024 and broke unrelated
+## host-level services (systemctl enable ssh.service failing with the same
+## "too many open files"). 2048 gives headroom for a whole-node restart
+## storm, not just a handful of pods.
 sysctlTuning:
   enabled: true
   inotify:
-    maxUserInstances: 1024
+    maxUserInstances: 2048
     maxUserWatches: 1048576
 
 monitoring:
