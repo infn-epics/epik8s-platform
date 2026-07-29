@@ -628,6 +628,14 @@ aiPlatform:
   argusStt:
     ## live PVC storage class - see qdrant above.
     storageClassName: nfs20t
+    ## Confirmed live 2026-07-29: the node's A2 GPU has 14GB free with only
+    ## the "base" model loaded (838MB used of 15356MB total) - ample room
+    ## for a much more accurate model. "base" was reported inaccurate for
+    ## Italian speech in practice; large-v3 is faster-whisper's best
+    ## general-purpose multilingual model. Revisit if transcription latency
+    ## becomes noticeable in practice - "medium" is the fallback middle
+    ## ground between base's speed and large-v3's accuracy.
+    sttModel: "Systran/faster-whisper-large-v3"
 
   argusTts:
     storageClassName: nfs20t
@@ -660,6 +668,18 @@ aiPlatform:
     ## HTTPS_PROXY). Deliberately NOT the same mechanism as
     ## aiPlatform.proxy.enabled - see agent.py's LLM_HTTP_PROXY comment.
     llmHttpProxy: "http://squid.lnf.infn.it:3128"
+    ## Confirmed live 2026-07-29: argus-tts's speaches server also serves
+    ## Kokoro-82M (multilingual, includes a real Italian voice pair -
+    ## if_sara female / im_nicola male), not just Piper. Switched to it as
+    ## the default: noticeably higher quality than piper's it_IT-riccardo
+    ## (x_low, the lowest Piper quality tier) and confirmed fast on this
+    ## GPU (~0.3s for a short sentence). Piper's it_IT-paola-medium is a
+    ## proven-working fallback if Kokoro's Italian quality disappoints in
+    ## practice - swap ttsModel back to
+    ## "speaches-ai/piper-it_IT-paola-medium" and ttsVoice to
+    ## "it_IT-paola-medium".
+    ttsModel: "speaches-ai/Kokoro-82M-v1.0-ONNX"
+    ttsVoice: "if_sara"
 
   voiceToken:
     enabled: true
