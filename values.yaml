@@ -12,6 +12,9 @@ networking:
     advertisements: []
   ## list of k8s.cni.cncf.io/v1 NetworkAttachmentDefinitions: {name, namespace, config}
   nads: []
+  ## labels to apply to existing Node objects: {name, labels{}} - merged onto the
+  ## node (does not touch spec/status or labels not listed here). See README.
+  nodeLabels: []
 
 storage:
   enabled: true
@@ -338,24 +341,41 @@ aiPlatform:
       cluster:
         enabled: false
 
-  ## Self-hosted STT+TTS for LibreChat's voice input/output, kept off the
-  ## cluster's one GPU (already exclusively claimed by vllm above at
-  ## gpuMemoryUtilization 0.92, ~1.2GB free - not enough headroom, and no
-  ## time-slicing configured). speaches (https://github.com/speaches-ai/speaches)
-  ## is a single OpenAI-API-compatible server implementing BOTH
-  ## /v1/audio/transcriptions (STT, faster-whisper) and /v1/audio/speech
-  ## (TTS, piper/Kokoro), so one CPU-only component covers both - see
-  ## aiPlatform.librechat.speech below for how LibreChat is pointed at it.
-  speaches:
+  ## Self-hosted STT+TTS for LibreChat's voice input/output, split into two
+  ## shared services (not just LibreChat's own consumers - also meant to
+  ## back a separate LiveKit voice agent later) rather than one combined
+  ## component: argus-stt on the GPU (small int8 Whisper model - the
+  ## cluster's one GPU is already exclusively claimed by vllm above at
+  ## gpuMemoryUtilization 0.92, ~1.2GB free even with time-slicing enabled,
+  ## since time-slicing only fixes scheduling, not VRAM partitioning - so
+  ## this MUST stay a small model) and argus-tts on CPU (Piper has no GPU
+  ## benefit). Both are the same image
+  ## (https://github.com/speaches-ai/speaches, an OpenAI-API-compatible
+  ## server implementing /v1/audio/transcriptions via faster-whisper and
+  ## /v1/audio/speech via piper/Kokoro) deployed twice with different
+  ## resource profiles, rather than a second unverified TTS image/protocol -
+  ## see aiPlatform.librechat.speech below for how LibreChat is pointed at
+  ## them. Requires GPU time-slicing enabled on the cluster first (a
+  ## separate, cluster-wide gpu-operator change, not part of this chart) -
+  ## argus-stt will sit Pending without it.
+  argusStt:
+    enabled: true
+    image: ghcr.io/speaches-ai/speaches:latest-cuda
+    sttModel: "Systran/faster-whisper-base" # smallest practical - see above
+    storageClassName: local-path
+    storageSize: 10Gi # HF model cache - avoids re-download on pod restart
+    resources:
+      requests: { cpu: "1", memory: 2Gi, nvidia.com/gpu: "1" }
+      limits: { cpu: "2", memory: 4Gi, nvidia.com/gpu: "1" }
+
+  argusTts:
     enabled: true
     image: ghcr.io/speaches-ai/speaches:latest-cpu
-    replicas: 1
-    sttModel: "Systran/faster-whisper-small" # multilingual, CPU-friendly
     storageClassName: local-path
-    storageSize: 20Gi # HF model cache - avoids re-download on pod restart
+    storageSize: 10Gi
     resources:
       requests: { cpu: "1", memory: 2Gi }
-      limits: { cpu: "4", memory: 4Gi }
+      limits: { cpu: "2", memory: 3Gi }
 
   embeddings:
     enabled: true
@@ -465,21 +485,24 @@ aiPlatform:
     modelSpecs:
       enabled: false
       list: []
-    ## Voice input/output, backed by the self-hosted aiPlatform.speaches
-    ## service above (CPU-only faster-whisper + piper/Kokoro) - literal
-    ## in-cluster URL, same convention as llmEndpoints/mcpServers below
-    ## (no cross-referencing sibling component blocks). tts.model/voices
-    ## are placeholders - confirm against speaches' own GET /v1/models
-    ## before relying on them, see epik8s-platform README.
+    ## Voice input/output, backed by the self-hosted aiPlatform.argusStt/
+    ## argusTts services above - literal in-cluster URLs, same convention as
+    ## llmEndpoints/mcpServers below (no cross-referencing sibling component
+    ## blocks). model/voices confirmed live against the deployed
+    ## argus-stt/argus-tts's own /v1/registry and a real round-trip
+    ## transcription+synthesis test, not guessed - only two Italian voices
+    ## exist in speaches' catalog: this (male, lower "x_low" quality tier)
+    ## and speaches-ai/piper-it_IT-paola-medium (female, better quality) -
+    ## swap if voice quality matters more than matching gender.
     speech:
       enabled: true
       stt:
-        url: "http://speaches.ai-platform.svc.cluster.local:8000/v1"
-        model: "Systran/faster-whisper-small" # must match aiPlatform.speaches.sttModel
+        url: "http://argus-stt.ai-platform.svc.cluster.local:8000/v1"
+        model: "Systran/faster-whisper-base" # must match aiPlatform.argusStt.sttModel
       tts:
-        url: "http://speaches.ai-platform.svc.cluster.local:8000/v1"
-        model: ""
-        voices: []
+        url: "http://argus-tts.ai-platform.svc.cluster.local:8000/v1"
+        model: "speaches-ai/piper-it_IT-riccardo-x_low"
+        voices: ["it_IT-riccardo-x_low"]
     ## carries forward what openwebui's TOOL_SERVER_CONNECTIONS registered,
     ## so replacing the frontend doesn't drop existing capability.
     mcpServers:

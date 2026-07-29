@@ -1,0 +1,84 @@
+{{- if and .Values.aiPlatform.enabled .Values.aiPlatform.argusTts.enabled }}
+{{- $ns := .Values.aiPlatform.namespace }}
+{{- $v := .Values.aiPlatform.argusTts }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: argus-tts-model-cache
+  namespace: {{ $ns }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if $v.storageClassName }}
+  storageClassName: {{ $v.storageClassName }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $v.storageSize }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: argus-tts
+  namespace: {{ $ns }}
+  labels:
+    app: argus-tts
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: argus-tts
+  template:
+    metadata:
+      labels:
+        app: argus-tts
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: argus-tts
+          image: {{ $v.image }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          {{- if $.Values.aiPlatform.proxy.enabled }}
+          env:
+            - name: HTTP_PROXY
+              value: {{ $.Values.aiPlatform.proxy.httpProxy }}
+            - name: http_proxy
+              value: {{ $.Values.aiPlatform.proxy.httpProxy }}
+            - name: HTTPS_PROXY
+              value: {{ $.Values.aiPlatform.proxy.httpsProxy }}
+            - name: https_proxy
+              value: {{ $.Values.aiPlatform.proxy.httpsProxy }}
+            - name: NO_PROXY
+              value: {{ $.Values.aiPlatform.proxy.noProxy }}
+            - name: no_proxy
+              value: {{ $.Values.aiPlatform.proxy.noProxy }}
+            {{- end }}
+          resources:
+            {{- toYaml $v.resources | nindent 12 }}
+          volumeMounts:
+            - name: model-cache
+              mountPath: /home/ubuntu/.cache/huggingface/hub
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: argus-tts-model-cache
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: argus-tts
+  namespace: {{ $ns }}
+spec:
+  type: ClusterIP
+  selector:
+    app: argus-tts
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+      protocol: TCP
+{{- end }}

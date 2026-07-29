@@ -1,0 +1,13 @@
+{{- if .Values.networking.enabled }}
+{{- range .Values.networking.nodeLabels }}
+---
+apiVersion: v1
+kind: Node
+metadata:
+  name: {{ .name }}
+  labels:
+{{- range $k, $v := .labels }}
+    {{ $k }}: {{ $v | quote }}
+{{- end }}
+{{- end }}
+{{- end }}

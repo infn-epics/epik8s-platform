@@ -239,6 +239,58 @@ networking:
           }
         }
 
+  ## NOTE: only the manually-set custom labels are reproduced here (NFD
+  ## feature.node.kubernetes.io/*, nvidia.com/* GPU-operator labels, and the
+  ## built-in kubernetes.io/beta.kubernetes.io/node.kubernetes.io ones are
+  ## owned by their respective controllers, not this chart - see README).
+  nodeLabels:
+    - name: kube-chaos01.chaos.lnf.infn.it
+      labels:
+        lb-network-access: vlan-10-6
+    - name: kube-chaos02.chaos.lnf.infn.it
+      labels:
+        lb-network-access: vlan-10-6
+    - name: kube-chaos04.chaos.lnf.infn.it
+      labels:
+        lb-network-access: vlan-10-6
+    - name: plk8sdactrl001.lnf.infn.it
+      labels:
+        network: btf-189
+    - name: plk8sdactrl002.lnf.infn.it
+      labels:
+        vlan-110: sparc-br-cams
+    - name: plk8sdactrl003.lnf.infn.it
+      labels:
+        control: sparc-magnets
+    - name: plk8sdadom001.lnf.infn.it
+      labels:
+        control: sparc-br-cams
+        lb-network-access: vlan-108
+        vlan-110: sparc-br-cams
+        vlan-115: euaps-cams
+        vlan-197: sparc-net
+    - name: plk8sdadom002.lnf.infn.it
+      labels:
+        control: sparc-br-cams
+        lb-network-access: vlan-108
+        vlan-115: euaps-cams
+    - name: plk8sdadom003.lnf.infn.it
+      labels:
+        lb-network-access: vlan-108
+        vlan-110: sparc-br-cams
+        vlan-115: euaps-cams
+        vlan-197: sparc-net
+    - name: plk8sdagpu001.lnf.infn.it
+      labels:
+        control: gpu
+        gpu: nvidia-a2
+        node-type: gpu
+        vlan-110: sparc-br-cams
+        vlan-115: euaps-cams
+    - name: plsparcdom001.lnf.infn.it
+      labels:
+        lb-network-access: vlan-109
+
 storage:
   enabled: true
   classes:
@@ -571,9 +623,13 @@ aiPlatform:
       host: qdrant.k8sda.lnf.infn.it
 
   ## NOTE: same "new capability, not codification" caveat as librechat below
-  ## - nothing live to reproduce here yet.
-  speaches:
+  ## - nothing live to reproduce here yet. Requires GPU time-slicing enabled
+  ## on the cluster first - see argusStt.image's comment in values.yaml.
+  argusStt:
     ## live PVC storage class - see qdrant above.
+    storageClassName: nfs20t
+
+  argusTts:
     storageClassName: nfs20t
 
   mcp:
@@ -638,6 +694,13 @@ aiPlatform:
           preset:
             endpoint: "AI-Gateway-90"
             model: "minimax-m27"
+      ## Without this, a non-empty modelSpecs.list hides LibreChat's normal
+      ## endpoint/model dropdown entirely - every llmEndpoints[].name above
+      ## must be listed here too, or users can only ever get minimax-m27.
+      addedEndpoints:
+        - "LiteLLM Gateway"
+        - "AI-Gateway-WP6"
+        - "AI-Gateway-90"
     ## serviceName confirmed by rendering each beamline's computed argus values
     ## through argus-helm-chart directly (helm's naming convention for release
     ## name "argus" + chart name "argus-helm-chart", not simply "argus-mcp").

@@ -1,0 +1,95 @@
+{{- if and .Values.aiPlatform.enabled .Values.aiPlatform.argusStt.enabled }}
+{{- $ns := .Values.aiPlatform.namespace }}
+{{- $v := .Values.aiPlatform.argusStt }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: argus-stt-model-cache
+  namespace: {{ $ns }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if $v.storageClassName }}
+  storageClassName: {{ $v.storageClassName }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $v.storageSize }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: argus-stt
+  namespace: {{ $ns }}
+  labels:
+    app: argus-stt
+spec:
+  # Single replica deliberately - a shared GPU STT service on a
+  # nearly-saturated card (see values.yaml's vllm.gpuMemoryUtilization)
+  # relies on one worker serializing requests rather than parallel batching.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: argus-stt
+  template:
+    metadata:
+      labels:
+        app: argus-stt
+    spec:
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: argus-stt
+          image: {{ $v.image }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: WHISPER__MODEL
+              value: {{ $v.sttModel | quote }}
+            {{- if $.Values.aiPlatform.proxy.enabled }}
+            - name: HTTP_PROXY
+              value: {{ $.Values.aiPlatform.proxy.httpProxy }}
+            - name: http_proxy
+              value: {{ $.Values.aiPlatform.proxy.httpProxy }}
+            - name: HTTPS_PROXY
+              value: {{ $.Values.aiPlatform.proxy.httpsProxy }}
+            - name: https_proxy
+              value: {{ $.Values.aiPlatform.proxy.httpsProxy }}
+            - name: NO_PROXY
+              value: {{ $.Values.aiPlatform.proxy.noProxy }}
+            - name: no_proxy
+              value: {{ $.Values.aiPlatform.proxy.noProxy }}
+            {{- end }}
+          resources:
+            {{- toYaml $v.resources | nindent 12 }}
+          volumeMounts:
+            - name: model-cache
+              mountPath: /home/ubuntu/.cache/huggingface/hub
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: argus-stt-model-cache
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: argus-stt
+  namespace: {{ $ns }}
+spec:
+  type: ClusterIP
+  selector:
+    app: argus-stt
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+      protocol: TCP
+{{- end }}
