@@ -377,12 +377,18 @@ aiPlatform:
 
   argusTts:
     enabled: true
-    image: ghcr.io/speaches-ai/speaches:latest-cpu
+    ## Confirmed live 2026-07-29: this was left on the CPU-only image with
+    ## no GPU request, unlike argusStt right above (an oversight, not a
+    ## deliberate choice) - CPU-bound piper synthesis took 10-20s per short
+    ## utterance, well past the voice agent's TTS timeout, so every session
+    ## failed with "no audio frames were pushed" even though STT/LLM both
+    ## worked. plk8sdagpu001 has 2 GPUs; argusStt only claims one.
+    image: ghcr.io/speaches-ai/speaches:latest-cuda
     storageClassName: local-path
     storageSize: 10Gi
     resources:
-      requests: { cpu: "1", memory: 2Gi }
-      limits: { cpu: "2", memory: 3Gi }
+      requests: { cpu: "1", memory: 2Gi, nvidia.com/gpu: "1" }
+      limits: { cpu: "2", memory: 3Gi, nvidia.com/gpu: "1" }
 
   ## Experimental Jarvis-like voice assistant (LiveKit server + a
   ## read-only-tools voice agent + a token-minting endpoint), see README's
