@@ -46,6 +46,8 @@ import asyncio
 import json
 import logging
 import os
+import re
+from typing import AsyncIterable
 
 import httpx
 import openai as openai_sdk
@@ -90,6 +92,14 @@ SYSTEM_PROMPT = """Sei ARGUS, l'assistente vocale del sistema di controllo dell'
 Rispondi in italiano, in modo breve e chiaro, adatto all'ascolto in sala controllo.
 Puoi consultare stato macchina, valori di PV, storico allarmi, IOC, dispositivi,
 log e documentazione tramite gli strumenti disponibili.
+Le tue risposte vengono lette ad alta voce: non elencare MAI un risultato di uno
+strumento parola per parola (es. una lista di decine o centinaia di dispositivi/PV).
+Se uno strumento restituisce molti elementi, riassumi solo i conteggi aggregati e le
+2-3 categorie più rilevanti in una o due frasi, poi chiedi all'operatore se vuole
+dettagli su una categoria specifica. Non usare mai elenchi puntati, tabelle,
+markdown o simboli come "---": tutto il testo diventa audio parlato. Ogni risposta
+deve stare in poche frasi, come una vera risposta a voce fra colleghi in sala
+controllo, mai un report scritto.
 NON hai la capacità di scrivere su alcuna PV né di riavviare alcun IOC in questa fase:
 se ti viene chiesto di farlo, spiega chiaramente che questa funzione non è ancora
 abilitata su questo canale vocale e che l'azione va eseguita tramite l'interfaccia
@@ -98,6 +108,29 @@ Quando consulti un dispositivo o una PV specifica tramite uno strumento, il fatt
 quello strumento evidenzi il widget corrispondente sulla dashboard è un effetto
 collaterale intenzionale - non serve menzionarlo all'operatore.
 """
+
+
+# Matches lines that are pure markdown noise (horizontal rules, bullet/
+# heading markers) with nothing else worth speaking - the LLM is told not
+# to produce these (see SYSTEM_PROMPT), but this is a defensive second
+# layer: confirmed live, a text chunk that's just "---" (or similar) makes
+# argus-tts/piper synthesize genuinely zero audio frames for that chunk,
+# which livekit-agents' TTS stream adapter then surfaces as a hard
+# APIError that kills the ENTIRE reply - not just that one chunk - even
+# though every other chunk synthesized fine.
+_MARKDOWN_NOISE_LINE = re.compile(r"^\s*([-=*#_~]{2,}|[-*•]\s*)\s*$")
+
+
+class ArgusAgent(Agent):
+    async def tts_node(self, text, model_settings):
+        async def _sanitized() -> AsyncIterable[str]:
+            async for chunk in text:
+                lines = [ln for ln in chunk.splitlines() if not _MARKDOWN_NOISE_LINE.match(ln)]
+                cleaned = "\n".join(lines)
+                if cleaned.strip():
+                    yield cleaned
+
+        return Agent.default.tts_node(self, _sanitized(), model_settings)
 
 
 async def entrypoint(ctx: JobContext) -> None:
@@ -128,7 +161,7 @@ async def entrypoint(ctx: JobContext) -> None:
 
     ctx.add_shutdown_callback(_cleanup)
 
-    agent = Agent(instructions=SYSTEM_PROMPT, tools=argus_tools, mcp_servers=native_mcp_servers)
+    agent = ArgusAgent(instructions=SYSTEM_PROMPT, tools=argus_tools, mcp_servers=native_mcp_servers)
 
     llm_http_client = httpx.AsyncClient(proxy=LLM_HTTP_PROXY) if LLM_HTTP_PROXY else None
     llm_client = openai_sdk.AsyncClient(base_url=LLM_BASE_URL, api_key=LLM_API_KEY, http_client=llm_http_client)
