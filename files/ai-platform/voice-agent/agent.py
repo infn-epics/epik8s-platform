@@ -155,4 +155,17 @@ if __name__ == "__main__":
     # response and the WS handshake fails with a confusing
     # "Invalid response status" error. LiveKit's own signaling connection is
     # always in-cluster; it must never go through the outbound proxy.
+    #
+    # This alone is NOT sufficient, though - confirmed live: every per-job
+    # room connection (this entrypoint's ctx.connect(), and any other
+    # rtc.Room.connect() call) goes through livekit-agents' Rust FFI layer,
+    # a separate code path from the Python/aiohttp worker-registration
+    # connection above, with its own (env-var-based) proxy handling that
+    # this http_proxy="" kwarg does not reach. It hit the exact same
+    # failure mode (routed through Squid, which then 403s a cluster-
+    # internal host) - crashing every job before STT/LLM/TTS ever ran.
+    # The actual fix is in voice-agent.yaml: HTTP_PROXY/HTTPS_PROXY are
+    # unset before `python agent.py start` runs, so neither this Python
+    # layer nor the Rust FFI layer ever sees them - proxy env vars are
+    # only needed during the earlier `pip install` step.
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, http_proxy=""))

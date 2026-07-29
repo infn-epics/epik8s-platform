@@ -63,6 +63,7 @@ spec:
             - >-
               pip install --no-cache-dir
               "livekit-agents[mcp]>=0.12,<2" livekit-plugins-openai livekit-plugins-silero
+              && unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy
               && python /app/agent.py start
           env:
             - name: LIVEKIT_URL
