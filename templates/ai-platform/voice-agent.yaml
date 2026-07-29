@@ -32,6 +32,8 @@ data:
 {{ .Files.Get "files/ai-platform/voice-agent/agent.py" | indent 4 }}
   argus_mcp_bridge.py: |
 {{ .Files.Get "files/ai-platform/voice-agent/argus_mcp_bridge.py" | indent 4 }}
+  argus_content.py: |
+{{ .Files.Get "files/ai-platform/voice-agent/argus_content.py" | indent 4 }}
   events.py: |
 {{ .Files.Get "files/ai-platform/voice-agent/events.py" | indent 4 }}
 ---

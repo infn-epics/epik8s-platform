@@ -10,6 +10,13 @@ when the model performs a tool call mid-turn (confirmed live against
 livekit-agents 1.6.7 - see agent.py's ArgusAgent.llm_node). Frontend
 reducers must treat this as normal, not an error - see
 src/voice/events.js's reducePhaseEvent.
+
+`content` (kind: table/chart/widget - built up incrementally across the
+"Phase B" rich-content feature, see argus_content.py) is the rich-content
+channel: tables, historical trend charts, and embedded live control
+widgets, extracted server-side from otherwise-plain-text tool results.
+Deliberately no turn_id - ordered into the frontend's chat feed purely by
+`ts`, same as highlight.
 """
 from __future__ import annotations
 
@@ -24,6 +31,7 @@ EVENT_TRANSCRIPT = "transcript"
 EVENT_CONFIRM_REQUEST = "confirm_request"
 EVENT_CONFIRM_ACTION = "confirm_action"
 EVENT_PHASE = "phase"
+EVENT_CONTENT = "content"
 
 DEFAULT_HIGHLIGHT_TTL_MS = 8000
 
@@ -109,6 +117,45 @@ async def send_phase(room: rtc.Room, turn_id: str, phase: str, edge: str) -> Non
         "edge": edge,
         "ts": int(time.time() * 1000),
     })
+
+
+async def send_content_chart(
+    room: rtc.Room,
+    tool: str,
+    title: str,
+    series: list[dict[str, Any]],
+    unit: str | None = None,
+    source: str = "tool",
+    truncated: dict[str, int] | None = None,
+) -> None:
+    """A time-series chart, built from a get_history-shaped tool result (or,
+    in a later phase, an automatic historical-trend enrichment attached to
+    a device lookup - see source: "tool" vs "auto_enrichment").
+
+    Each series is {"label", "pv", "t": [epoch_ms, ...], "v": [float, ...]}
+    - columnar, not an array of {t,v} objects, to roughly halve the wire
+    size (LiveKit reliable data-channel messages have a practical size
+    ceiling - keep chart/table payloads capped, see argus_content.py's
+    MAX_CHART_POINTS). The frontend converts to {x,y} points at its own
+    component boundary (src/components/consoles/voiceContentUI.jsx).
+
+    No turn_id, deliberately, matching send_highlight's own precedent -
+    the frontend orders content blocks into the chat feed purely by `ts`.
+    """
+    payload: dict[str, Any] = {
+        "type": EVENT_CONTENT,
+        "kind": "chart",
+        "tool": tool,
+        "title": title,
+        "series": series,
+        "source": source,
+        "ts": int(time.time() * 1000),
+    }
+    if unit:
+        payload["unit"] = unit
+    if truncated:
+        payload["truncated"] = truncated
+    await _publish(room, payload)
 
 
 async def send_confirm_request(

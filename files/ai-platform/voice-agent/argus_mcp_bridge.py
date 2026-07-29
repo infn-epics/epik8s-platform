@@ -34,6 +34,7 @@ from livekit import rtc
 from livekit.agents import function_tool
 from livekit.agents.llm import FunctionTool
 
+from argus_content import emit_content_for_tool
 from events import send_highlight
 
 logger = logging.getLogger("voice-agent.argus-mcp-bridge")
@@ -140,6 +141,14 @@ class ArgusMcpBridge:
                     # A highlight is a UI nicety - never let it break the
                     # actual tool call/response the LLM is waiting on.
                     logger.exception("failed to publish highlight event for %s", qualified_name)
+
+            try:
+                await emit_content_for_tool(self._room, name, text)
+            except Exception:
+                # Same rationale as the highlight try/except above: rich
+                # content (tables/charts/widgets) is a UI enrichment, never
+                # allowed to break the actual tool response.
+                logger.exception("failed to emit content event for %s", qualified_name)
 
             return text or "(empty result)"
 
