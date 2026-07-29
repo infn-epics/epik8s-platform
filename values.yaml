@@ -388,7 +388,7 @@ aiPlatform:
   ## header comment.
   livekit:
     enabled: false
-    image: livekit/livekit-server:v1.8
+    image: livekit/livekit-server:v1.13
     replicas: 1 ## no Redis/HA wired up - keep at 1, see livekit.yaml
     ## Secret with api-key/api-secret/keys-line - provisioned out of band,
     ## see README's "Secrets handling" and livekit.yaml's header comment.

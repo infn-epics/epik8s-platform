@@ -143,4 +143,16 @@ async def entrypoint(ctx: JobContext) -> None:
 
 
 if __name__ == "__main__":
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
+    # http_proxy="" is deliberate, not an oversight: livekit-agents' own
+    # WorkerOptions defaults http_proxy from HTTPS_PROXY/HTTP_PROXY env vars
+    # (worker.py: `if not is_given(http_proxy): http_proxy =
+    # os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")`) WITHOUT
+    # consulting NO_PROXY at all. On a cluster with aiPlatform.proxy.enabled
+    # (corporate outbound proxy for internet-bound pip installs/model
+    # downloads), that silently routes the worker's *in-cluster* connection
+    # to LIVEKIT_URL through the proxy too, which cannot reach a
+    # cluster-internal Service hostname - the proxy returns some non-101
+    # response and the WS handshake fails with a confusing
+    # "Invalid response status" error. LiveKit's own signaling connection is
+    # always in-cluster; it must never go through the outbound proxy.
+    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, http_proxy=""))

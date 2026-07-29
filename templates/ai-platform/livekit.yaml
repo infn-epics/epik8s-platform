@@ -139,10 +139,12 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
   ingressClassName: {{ $.Values.aiPlatform.ingress.className }}
+  {{- if $.Values.aiPlatform.ingress.tlsSecretName }}
   tls:
     - hosts:
         - {{ $v.ingress.host }}
       secretName: {{ $.Values.aiPlatform.ingress.tlsSecretName }}
+  {{- end }}
   rules:
     - host: {{ $v.ingress.host }}
       http:

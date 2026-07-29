@@ -61,16 +61,36 @@ spec:
                   key: api-secret
             - name: TOKEN_TTL_SECONDS
               value: {{ $v.tokenTtlSeconds | quote }}
+            {{- if $.Values.aiPlatform.proxy.enabled }}
+            - name: HTTP_PROXY
+              value: {{ $.Values.aiPlatform.proxy.httpProxy }}
+            - name: HTTPS_PROXY
+              value: {{ $.Values.aiPlatform.proxy.httpsProxy }}
+            - name: NO_PROXY
+              value: {{ $.Values.aiPlatform.proxy.noProxy }}
+            {{- end }}
+          ## startupProbe gates liveness/readiness until the cold-start
+          ## `pip install && python ...` actually finishes and binds the
+          ## port - without it, a slow/loaded node can make the tight
+          ## liveness timing below kill the container mid-install
+          ## (kubernetes-mcp/rag-mcp use the same pattern for the same
+          ## reason, see mcp.yaml).
+          startupProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 60
           livenessProbe:
             httpGet:
               path: /healthz
               port: http
-            initialDelaySeconds: 5
+            periodSeconds: 15
           readinessProbe:
             httpGet:
               path: /healthz
               port: http
-            initialDelaySeconds: 3
+            periodSeconds: 5
           resources:
             {{- toYaml $v.resources | nindent 12 }}
           volumeMounts:
@@ -105,10 +125,12 @@ metadata:
   namespace: {{ $ns }}
 spec:
   ingressClassName: {{ $.Values.aiPlatform.ingress.className }}
+  {{- if $.Values.aiPlatform.ingress.tlsSecretName }}
   tls:
     - hosts:
         - {{ $v.ingress.host }}
       secretName: {{ $.Values.aiPlatform.ingress.tlsSecretName }}
+  {{- end }}
   rules:
     - host: {{ $v.ingress.host }}
       http:
