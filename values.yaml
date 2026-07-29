@@ -473,6 +473,10 @@ aiPlatform:
     ## comment for why this is separate from aiPlatform.proxy.* and not
     ## simply ambient HTTP_PROXY/HTTPS_PROXY env vars.
     llmHttpProxy: ""
+    ## openai.STT defaults to language="en" if not overridden - see
+    ## agent.py's STT_LANGUAGE comment. Keep in sync with ttsVoice/
+    ## SYSTEM_PROMPT below, which are also Italian-only for now.
+    sttLanguage: "it"
     ttsModel: "speaches-ai/piper-it_IT-riccardo-x_low" ## must match aiPlatform.librechat.speech.tts.model
     ttsVoice: "it_IT-riccardo-x_low"
     resources:

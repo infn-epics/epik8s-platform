@@ -62,6 +62,12 @@ logger = logging.getLogger("voice-agent")
 
 STT_BASE_URL = os.environ["STT_BASE_URL"]
 STT_MODEL = os.environ.get("STT_MODEL", "Systran/faster-whisper-base")
+# openai.STT defaults to language="en", detect_language=False - confirmed
+# against the installed livekit-plugins-openai: with neither overridden,
+# every session was transcribing Italian speech as if it were English the
+# whole time, not auto-detecting. Matches SYSTEM_PROMPT/TTS_VOICE, which
+# are both already Italian-only for this deployment.
+STT_LANGUAGE = os.environ.get("STT_LANGUAGE", "it")
 TTS_BASE_URL = os.environ["TTS_BASE_URL"]
 TTS_MODEL = os.environ.get("TTS_MODEL", "speaches-ai/piper-it_IT-riccardo-x_low")
 TTS_VOICE = os.environ.get("TTS_VOICE", "it_IT-riccardo-x_low")
@@ -167,7 +173,7 @@ async def entrypoint(ctx: JobContext) -> None:
     llm_client = openai_sdk.AsyncClient(base_url=LLM_BASE_URL, api_key=LLM_API_KEY, http_client=llm_http_client)
 
     session = AgentSession(
-        stt=openai.STT(base_url=STT_BASE_URL, api_key="none", model=STT_MODEL),
+        stt=openai.STT(base_url=STT_BASE_URL, api_key="none", model=STT_MODEL, language=STT_LANGUAGE),
         llm=openai.LLM(model=LLM_MODEL, client=llm_client),
         tts=openai.TTS(base_url=TTS_BASE_URL, api_key="none", model=TTS_MODEL, voice=TTS_VOICE),
         vad=silero.VAD.load(),

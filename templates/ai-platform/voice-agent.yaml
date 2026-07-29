@@ -82,6 +82,8 @@ spec:
               value: "http://argus-stt.{{ $ns }}.svc.cluster.local:8000/v1"
             - name: STT_MODEL
               value: {{ $.Values.aiPlatform.argusStt.sttModel | quote }}
+            - name: STT_LANGUAGE
+              value: {{ $v.sttLanguage | quote }}
             - name: TTS_BASE_URL
               value: "http://argus-tts.{{ $ns }}.svc.cluster.local:8000/v1"
             - name: TTS_MODEL
