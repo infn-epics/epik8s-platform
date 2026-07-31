@@ -626,6 +626,19 @@ aiPlatform:
         chatMenu: true
         title: "Confluence RAG"
         description: "Search ingested Confluence chunks in Qdrant (LDCG by default)."
+      ## Loki log search. Unlike the two above, this MCP server's WORKLOAD is NOT
+      ## deployed by this chart's mcp.yaml - it is managed by the k8sda root-app
+      ## (charts/loki-mcp), which owns the Loki it queries. This entry only
+      ## REGISTERS that already-running server into LibreChat (hence the
+      ## cross-namespace logging.* URL). Appended alongside the entries above,
+      ## not replacing them - see librechat.yaml's deepCopy/merge of mcpServers.
+      loki-mcp:
+        enabled: true
+        type: streamable-http
+        url: "http://loki-mcp.logging.svc.cluster.local:8080/mcp"
+        chatMenu: true
+        title: "Loki Logs"
+        description: "Search cluster/node logs in Loki via LogQL (errors, labels, recent lines)."
     ## The "possibility to add argus MCP": one entry per beamline that has
     ## deployed its own local argus-mcp server (via argus-helm-chart with
     ## argusMcp.enabled, librechat.enabled: false) - registers it into this
