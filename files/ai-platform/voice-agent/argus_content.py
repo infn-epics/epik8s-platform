@@ -7,7 +7,8 @@ this module builds payloads for.
 Built incrementally per epik8s-dashboard's Phase B plan chunking:
   B1: charts - get_history direct.
   B2: tables - list_iocs/search_pvs/list_beamline_devices.
-  B3: device correlation (DeviceCatalogCache) + embedded live widgets.
+  B3: device correlation (DeviceCatalogCache) + embedded live widgets -
+      get_device/device_status/diagnose_device.
   B4: automatic historical-trend chart attached to a device lookup.
 Only tools actually wired into CONTENT_*_TOOLS below produce a content
 event of any kind - everything else stays plain text to the LLM, same
@@ -24,12 +25,13 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import datetime
 from typing import Any
 
 from livekit import rtc
 
-from events import send_content_chart, send_content_table
+from events import send_content_chart, send_content_table, send_content_widget
 
 logger = logging.getLogger("voice-agent.argus-content")
 
@@ -40,10 +42,17 @@ CONTENT_CHART_DIRECT_TOOLS = frozenset({"get_history"})
 # Tools whose result is a row-listing best rendered as a table.
 CONTENT_TABLE_TOOLS = frozenset({"list_iocs", "search_pvs", "list_beamline_devices"})
 
+# Tools whose result is a single-device lookup, best rendered as an
+# embedded live widget once correlated against the beamline device catalog
+# (see DeviceCatalogCache below) - same tool set argus_mcp_bridge.py's
+# HIGHLIGHT_ARG_BY_TOOL already keys off of, all using the "device_name"
+# argument.
+CONTENT_WIDGET_TOOLS = frozenset({"get_device", "device_status", "diagnose_device"})
+
 # Union of every tool this module knows how to extract content from -
 # argus_mcp_bridge.py checks this first to skip the JSON parse entirely
 # for the (majority) of tool calls with no content mapping at all.
-CONTENT_TOOLS = CONTENT_CHART_DIRECT_TOOLS | CONTENT_TABLE_TOOLS
+CONTENT_TOOLS = CONTENT_CHART_DIRECT_TOOLS | CONTENT_TABLE_TOOLS | CONTENT_WIDGET_TOOLS
 
 MAX_TABLE_ROWS = 50
 
@@ -265,7 +274,95 @@ def build_table_content(tool_name: str, payload: dict[str, Any]) -> dict[str, An
     return None
 
 
-async def emit_content_for_tool(room: rtc.Room, tool_name: str, result_text: str) -> None:
+# How long a DeviceCatalogCache snapshot is trusted before refreshing.
+# Beamline device catalogs (deploy/values.yaml, read via git) change on
+# deploys, not live operation, so a few minutes of staleness is harmless -
+# this just avoids one extra MCP round-trip per device lookup.
+CATALOG_TTL_S = 300
+
+
+class DeviceCatalogCache:
+    """Per-ArgusMcpBridge, TTL-cached snapshot of list_beamline_devices(),
+    keyed by case-insensitive device name.
+
+    Exists to correlate get_device/device_status/diagnose_device's
+    ChannelFinder-backed response (confirmed live 2026-08-03: no devgroup,
+    no iocprefix, no key_pvs - just an echo of the input name as
+    primary_pv) against the YAML-backed devgroup/iocprefix a widget needs.
+    It also doubles as the only real existence check available: those three
+    tools report `"status": "success"` even for a device name that does
+    not exist at all, so a catalog miss here is what actually means "no
+    such device" - not the tool's own status field.
+
+    Exact match only, deliberately - a fuzzy/substring match risks
+    embedding the WRONG device's live widget, which is worse than
+    embedding none.
+    """
+
+    def __init__(self, get_session):
+        self._get_session = get_session
+        self._by_name: dict[str, dict[str, Any]] = {}
+        self._loaded_at: float = 0.0
+
+    async def _refresh(self) -> None:
+        session = self._get_session()
+        assert session is not None, "call after ArgusMcpBridge.connect()"
+        result = await session.call_tool("list_beamline_devices", {})
+        text = "\n".join(c.text for c in result.content if getattr(c, "text", None))
+        payload = json.loads(text)
+        devices = payload.get("devices")
+        if not isinstance(devices, list):
+            return
+        self._by_name = {
+            d["name"].lower(): d for d in devices if isinstance(d, dict) and d.get("name")
+        }
+        self._loaded_at = time.monotonic()
+
+    async def lookup(self, name: str) -> dict[str, Any] | None:
+        if not name:
+            return None
+        stale = (time.monotonic() - self._loaded_at) > CATALOG_TTL_S
+        if stale or not self._by_name:
+            try:
+                await self._refresh()
+            except Exception:
+                logger.exception("failed to refresh device catalog")
+        return self._by_name.get(name.strip().lower())
+
+
+def build_widget_content(tool_name: str, beamline_device: dict[str, Any]) -> dict[str, Any] | None:
+    """A resolved BeamlineDevice catalog entry -> one widget content dict
+    (kwargs for events.send_content_widget). None when the devgroup isn't
+    one this beamline's widget registry actually renders (see
+    DEVGROUP_WIDGET_MAP's coverage note) - not every device is embeddable,
+    and guessing a wrong widget_type is worse than showing none."""
+    name = beamline_device.get("name")
+    iocprefix = beamline_device.get("iocprefix")
+    if not name or not iocprefix:
+        return None
+    devgroup = beamline_device.get("devgroup")
+    widget_type = DEVGROUP_WIDGET_MAP.get(devgroup)
+    if not widget_type:
+        return None
+    pv_prefix = resolve_device_pv_prefix(name, iocprefix)
+    return {
+        "tool": tool_name,
+        "title": f"{name} ({devgroup})",
+        "device_id": pv_prefix,
+        "pv_prefix": pv_prefix,
+        "widget_type": widget_type,
+        "config": {"pvPrefix": pv_prefix, "viewMode": "essential"},
+    }
+
+
+async def emit_content_for_tool(
+    room: rtc.Room,
+    tool_name: str,
+    result_text: str,
+    *,
+    device_name: str | None = None,
+    catalog: "DeviceCatalogCache | None" = None,
+) -> None:
     """Dispatch point called from argus_mcp_bridge.py's _call(), right
     after the existing highlight fire-and-forget block, with the exact
     same JSON text already extracted from the MCP tool result (no second
@@ -276,6 +373,11 @@ async def emit_content_for_tool(room: rtc.Room, tool_name: str, result_text: str
 
     Cheap fast-path: skip the JSON parse entirely for the (large)
     majority of tool calls that have no content mapping at all.
+
+    device_name/catalog are only used for CONTENT_WIDGET_TOOLS - the
+    caller passes the same device_name it already extracted for the
+    highlight event (HIGHLIGHT_ARG_BY_TOOL happens to key all three widget
+    tools off "device_name" too) and its per-server DeviceCatalogCache.
     """
     if tool_name not in CONTENT_TOOLS:
         return
@@ -292,3 +394,15 @@ async def emit_content_for_tool(room: rtc.Room, tool_name: str, result_text: str
         content = build_table_content(tool_name, payload)
         if content is not None:
             await send_content_table(room, **content)
+    elif tool_name in CONTENT_WIDGET_TOOLS:
+        if not device_name or catalog is None:
+            return
+        beamline_device = await catalog.lookup(device_name)
+        if beamline_device is None:
+            # Not in the deployed catalog - see DeviceCatalogCache's
+            # docstring for why this (not payload["status"]) is the real
+            # existence check for these three tools.
+            return
+        content = build_widget_content(tool_name, beamline_device)
+        if content is not None:
+            await send_content_widget(room, **content)

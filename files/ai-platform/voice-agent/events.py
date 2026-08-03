@@ -195,6 +195,44 @@ async def send_content_table(
     await _publish(room, payload)
 
 
+async def send_content_widget(
+    room: rtc.Room,
+    tool: str,
+    title: str,
+    device_id: str,
+    pv_prefix: str,
+    widget_type: str,
+    config: dict[str, Any],
+    source: str = "tool",
+) -> None:
+    """An embedded, live control widget - built from a get_device/
+    device_status/diagnose_device lookup correlated against the beamline
+    device catalog (see argus_content.py's DeviceCatalogCache /
+    build_widget_content). config is passed straight through as the
+    widget component's `config` prop (see src/widgets/registry.js's
+    getWidgetComponent + src/components/consoles/voiceContentUI.jsx's
+    ContentWidgetBlock) - server picks widget_type + config, frontend
+    stays a dumb renderer, same split as send_content_table's
+    device_id/pv_prefix/widget_type row tagging.
+
+    No turn_id, deliberately, matching send_highlight/send_content_chart/
+    send_content_table's own precedent - the frontend orders content
+    blocks into the chat feed purely by `ts`.
+    """
+    await _publish(room, {
+        "type": EVENT_CONTENT,
+        "kind": "widget",
+        "tool": tool,
+        "title": title,
+        "device_id": device_id,
+        "pv_prefix": pv_prefix,
+        "widget_type": widget_type,
+        "config": config,
+        "source": source,
+        "ts": int(time.time() * 1000),
+    })
+
+
 async def send_confirm_request(
     room: rtc.Room,
     action_id: str,

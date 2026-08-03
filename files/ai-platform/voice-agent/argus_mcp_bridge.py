@@ -34,7 +34,7 @@ from livekit import rtc
 from livekit.agents import function_tool
 from livekit.agents.llm import FunctionTool
 
-from argus_content import emit_content_for_tool
+from argus_content import DeviceCatalogCache, emit_content_for_tool
 from events import send_highlight
 
 logger = logging.getLogger("voice-agent.argus-mcp-bridge")
@@ -83,6 +83,10 @@ class ArgusMcpBridge:
         self._session: ClientSession | None = None
         self._streams_cm = None
         self._session_cm = None
+        # Lambda, not a direct reference, since self._session is None at
+        # __init__ time and only set by connect() - the cache reads it
+        # lazily on its first lookup() call, well after connect().
+        self._catalog = DeviceCatalogCache(lambda: self._session)
 
     async def connect(self) -> None:
         self._streams_cm = sse_client(self._server.url)
@@ -130,11 +134,13 @@ class ArgusMcpBridge:
             text = "\n".join(c.text for c in result.content if getattr(c, "text", None))
 
             highlight_arg = HIGHLIGHT_ARG_BY_TOOL.get(name)
-            if highlight_arg and raw_arguments.get(highlight_arg):
+            device_name = str(raw_arguments[highlight_arg]) if highlight_arg and raw_arguments.get(highlight_arg) else None
+
+            if device_name:
                 try:
                     await send_highlight(
                         self._room,
-                        device_id=str(raw_arguments[highlight_arg]),
+                        device_id=device_name,
                         reason=f"ARGUS ({self._server.title or self._server.name}) · {name}",
                     )
                 except Exception:
@@ -143,7 +149,13 @@ class ArgusMcpBridge:
                     logger.exception("failed to publish highlight event for %s", qualified_name)
 
             try:
-                await emit_content_for_tool(self._room, name, text)
+                # device_name/catalog are no-ops for every tool except
+                # CONTENT_WIDGET_TOOLS (get_device/device_status/
+                # diagnose_device) - harmless to pass unconditionally since
+                # emit_content_for_tool only reads them there. Reuses the
+                # exact same device_name already extracted above for the
+                # highlight event rather than re-deriving it.
+                await emit_content_for_tool(self._room, name, text, device_name=device_name, catalog=self._catalog)
             except Exception:
                 # Same rationale as the highlight try/except above: rich
                 # content (tables/charts/widgets) is a UI enrichment, never
