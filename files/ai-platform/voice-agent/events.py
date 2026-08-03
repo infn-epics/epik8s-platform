@@ -158,6 +158,43 @@ async def send_content_chart(
     await _publish(room, payload)
 
 
+async def send_content_table(
+    room: rtc.Room,
+    tool: str,
+    title: str,
+    columns: list[str],
+    rows: list[dict[str, Any]],
+    source: str = "tool",
+    truncated: dict[str, int] | None = None,
+) -> None:
+    """A row-listing table built from list_iocs/search_pvs/list_beamline_devices
+    (see argus_content.py's build_table_content). Each row is
+    {"cells": {column: value, ...}, "device_id"?, "pv_prefix"?, "widget_type"?}
+    - device_id/pv_prefix/widget_type are present only when the row server-
+    side-resolves to an embeddable device (see argus_content.py's
+    DEVGROUP_WIDGET_MAP); their absence means the frontend renders the row
+    as plain, non-clickable data (e.g. list_iocs rows, or a devgroup this
+    beamline's widget registry doesn't cover).
+
+    No turn_id, deliberately, matching send_highlight/send_content_chart's
+    own precedent - the frontend orders content blocks into the chat feed
+    purely by `ts`.
+    """
+    payload: dict[str, Any] = {
+        "type": EVENT_CONTENT,
+        "kind": "table",
+        "tool": tool,
+        "title": title,
+        "columns": columns,
+        "rows": rows,
+        "source": source,
+        "ts": int(time.time() * 1000),
+    }
+    if truncated:
+        payload["truncated"] = truncated
+    await _publish(room, payload)
+
+
 async def send_confirm_request(
     room: rtc.Room,
     action_id: str,
