@@ -69,7 +69,7 @@ from typing import AsyncIterable
 
 import httpx
 import openai as openai_sdk
-from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli, get_job_context, mcp, stt
+from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli, get_job_context, llm, mcp, stt
 from livekit.plugins import openai, silero
 from livekit.plugins.openai.tts import AUDIO_STREAM_MODELS as _OPENAI_AUDIO_STREAM_MODELS
 
@@ -141,7 +141,10 @@ Se uno strumento restituisce molti elementi, riassumi solo i conteggi aggregati 
 dettagli su una categoria specifica. Non usare mai elenchi puntati, tabelle,
 markdown o simboli come "---": tutto il testo diventa audio parlato. Ogni risposta
 deve stare in poche frasi, come una vera risposta a voce fra colleghi in sala
-controllo, mai un report scritto.
+controllo, mai un report scritto. Non scrivere MAI nella risposta la sintassi
+letterale di una chiamata a uno strumento (tag come <tool_call>, <invoke>,
+<minimax:tool_call> o simili): se devi usare uno strumento, chiamalo tramite il
+normale meccanismo di function calling, mai come testo visibile o pronunciabile.
 NON hai la capacità di scrivere su alcuna PV né di riavviare alcun IOC in questa fase:
 se ti viene chiesto di farlo, spiega chiaramente che questa funzione non è ancora
 abilitata su questo canale vocale e che l'azione va eseguita tramite l'interfaccia
@@ -161,6 +164,76 @@ collaterale intenzionale - non serve menzionarlo all'operatore.
 # APIError that kills the ENTIRE reply - not just that one chunk - even
 # though every other chunk synthesized fine.
 _MARKDOWN_NOISE_LINE = re.compile(r"^\s*([-=*#_~]{2,}|[-*•]\s*)\s*$")
+
+
+# Confirmed live 2026-08-05: minimax-m27 (via the AI Gateway) occasionally
+# emits a tool call as literal response CONTENT instead of a proper OpenAI
+# `tool_calls` delta - e.g. "<minimax:tool_call>\n<invoke
+# name=\"sparc-argus__list_iocs\">\n</invoke>\n</minimax:tool_call>" shows up
+# as text the operator can see/hear. Isolated single- and multi-turn replays
+# against the gateway (same system prompt, same full tool list) came back
+# with a correctly-structured tool_calls field every time, so this is
+# context/timing-dependent and not reliably reproducible - not something to
+# chase further upstream right now. Same "never let raw
+# protocol/markup reach the operator" principle as _MARKDOWN_NOISE_LINE
+# above: strip it defensively rather than relying on the model/gateway to
+# stop doing this. Streaming-safe (buffers only while a possible open tag
+# is in flight) since llm_node's chunks split this text arbitrarily.
+_TOOL_CALL_LEAK_OPEN = "<minimax:tool_call>"
+_TOOL_CALL_LEAK_CLOSE = "</minimax:tool_call>"
+_TOOL_CALL_LEAK_MAX_BUFFER = 4000  # give up and flush verbatim past this - never eat a whole reply
+
+
+async def _strip_leaked_tool_call_syntax(chunks: AsyncIterable[llm.ChatChunk]) -> AsyncIterable[llm.ChatChunk]:
+    buf = ""
+    in_leak = False
+    async for chunk in chunks:
+        content = chunk.delta.content if chunk.delta else None
+        if not content:
+            yield chunk
+            continue
+
+        buf += content
+        out = ""
+        while True:
+            if not in_leak:
+                idx = buf.find(_TOOL_CALL_LEAK_OPEN)
+                if idx == -1:
+                    # No open tag yet, but the buffered tail could be the
+                    # start of one split across chunks - hold back only
+                    # what's still ambiguous, flush the rest immediately.
+                    safe_len = max(0, len(buf) - (len(_TOOL_CALL_LEAK_OPEN) - 1))
+                    if safe_len:
+                        out += buf[:safe_len]
+                        buf = buf[safe_len:]
+                    break
+                if idx > 0:
+                    out += buf[:idx]
+                buf = buf[idx:]
+                in_leak = True
+                logger.warning("stripping a leaked <minimax:tool_call> block from LLM output")
+            idx = buf.find(_TOOL_CALL_LEAK_CLOSE)
+            if idx == -1:
+                if len(buf) > _TOOL_CALL_LEAK_MAX_BUFFER:
+                    out += buf
+                    buf = ""
+                    in_leak = False
+                break
+            buf = buf[idx + len(_TOOL_CALL_LEAK_CLOSE):]
+            in_leak = False
+
+        chunk.delta.content = out or None
+        yield chunk
+
+    # The end-of-stream safety margin (up to len(open-tag)-1 chars, held
+    # back in buf in case the NEXT chunk completed a split open tag) has
+    # no next chunk to attach to once the source stream is exhausted -
+    # without this, that trailing slice of every single reply would be
+    # silently dropped forever. Only flush it if we're not mid-leak
+    # (in_leak=True at end-of-stream means a genuinely unclosed tag -
+    # safe/correct to drop, not flush, matching the filter's whole point).
+    if buf and not in_leak:
+        yield llm.ChatChunk(id="tool-call-leak-filter-flush", delta=llm.ChoiceDelta(role="assistant", content=buf))
 
 
 def _emit_phase(turn_id: str, phase: str, edge: str) -> None:
@@ -246,7 +319,8 @@ class ArgusAgent(Agent):
         turn_id = getattr(self, "_current_turn_id", None) or uuid.uuid4().hex
         _emit_phase(turn_id, "llm", "start")
         try:
-            async for chunk in Agent.default.llm_node(self, chat_ctx, tools, model_settings):
+            raw = Agent.default.llm_node(self, chat_ctx, tools, model_settings)
+            async for chunk in _strip_leaked_tool_call_syntax(raw):
                 yield chunk
         finally:
             _emit_phase(turn_id, "llm", "end")
