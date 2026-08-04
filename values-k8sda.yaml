@@ -646,6 +646,13 @@ aiPlatform:
   ## same IP on redeploy unless a static IP is requested (see the
   ## loadbalancer: <ip> pattern used by pvagateway/gateway above).
   livekit:
+    ## Was missing from this file despite livekit-server actually being
+    ## live-deployed (values drift - confirmed 2026-08-05 the resource is
+    ## a plain `kubectl apply`d object, not a tracked Helm release, so
+    ## nothing caught this file no longer matching reality). Made explicit
+    ## so a future `helm template ... -f values-k8sda.yaml` re-render
+    ## doesn't silently omit livekit.yaml's resources entirely.
+    enabled: true
     rtc:
       nodeIp: "192.168.108.224"
       ## Root-caused live 2026-08-05: templates/ai-platform/livekit.yaml's
