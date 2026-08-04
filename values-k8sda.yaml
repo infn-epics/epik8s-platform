@@ -648,6 +648,25 @@ aiPlatform:
   livekit:
     rtc:
       nodeIp: "192.168.108.224"
+      ## Root-caused live 2026-08-05: templates/ai-platform/livekit.yaml's
+      ## livekit-rtc Service only ever exposes ONE UDP port
+      ## (rtc.portRangeStart, 50000 by default) - portRangeEnd is passed
+      ## into livekit-server's own port_range_end config (telling it a
+      ## WIDER range to allocate RTP media ports FROM) but is never
+      ## reflected into the Service's port list. With the base values.yaml
+      ## default (portRangeEnd: 50100), livekit-server can allocate a
+      ## track's media to any of 101 ports while only port 50000 is
+      ## actually reachable through the LoadBalancer - any track that
+      ## lands elsewhere is silently unreachable (confirmed live: repeated
+      ## "unsubscribing from track after notFoundTimeout / track cannot be
+      ## found" on livekit-server, tracked back to every voice session
+      ## since 2026-08-04T07:23 failing to deliver audio to STT). Pinning
+      ## this to match portRangeStart forces every track onto the one port
+      ## the Service actually exposes - the real behavior already, made
+      ## explicit, at the cost of only ever supporting one concurrent RTC
+      ## media session server-wide until the Service is widened instead
+      ## (see values.yaml's rtc.portRangeEnd comment).
+      portRangeEnd: 50000
 
   ## Confirmed live 2026-07-29: neither aiPlatform.litellm nor a vLLM
   ## backend is actually deployed on k8sda - LibreChat's own live config

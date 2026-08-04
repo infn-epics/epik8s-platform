@@ -412,6 +412,20 @@ aiPlatform:
     rtc:
       portRangeStart: 50000
       portRangeEnd: 50100
+      ## CAVEAT (root-caused live on k8sda 2026-08-05): templates/ai-platform
+      ## /livekit.yaml's livekit-rtc Service only ever exposes a single UDP
+      ## port (portRangeStart) - portRangeEnd only widens livekit-server's
+      ## OWN internal allocation range, it is never reflected into the
+      ## Service's port list. Leaving portRangeEnd wider than portRangeStart
+      ## therefore lets the server allocate a track's media to a port the
+      ## Service never actually forwards, which silently breaks that
+      ## session's audio (confirmed: "unsubscribing from track after
+      ## notFoundTimeout" on livekit-server, STT never receiving audio).
+      ## Either pin portRangeEnd == portRangeStart per-environment (see
+      ## values-k8sda.yaml's rtc.portRangeEnd comment - single concurrent
+      ## RTC session, but matches what's actually reachable), or widen the
+      ## Service's ports list in livekit.yaml to cover the full range before
+      ## raising portRangeEnd above portRangeStart.
       ## LoadBalancer is the only Service type that can carry the UDP RTC
       ## media path outside the cluster on most providers - NodePort works
       ## too if you have your own external LB/firewall rules. See
