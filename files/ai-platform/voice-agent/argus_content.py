@@ -23,6 +23,7 @@ expected return value here, not an error path).
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -30,6 +31,7 @@ from datetime import datetime
 from typing import Any
 
 from livekit import rtc
+from mcp import ClientSession
 
 from events import send_content_chart, send_content_table, send_content_widget
 
@@ -72,6 +74,18 @@ DEVGROUP_WIDGET_MAP = {
     "cool": "cooling",
     "mot": "motor",
     "cam": "camera",
+}
+
+# devgroup -> key_pvs role to auto-chart on a device lookup (B4). Populated
+# only for the three groups where list_beamline_devices' key_pvs is
+# actually non-empty in this catalog (confirmed live 2026-08-03: mag/vac/
+# cool devices have it, mot/cam/etc. don't) - motors get their own .RBV
+# suffix fallback below instead (resolve_chart_pv), everything else gets no
+# auto-chart at all rather than a guessed PV.
+DEVGROUP_CHART_ROLE = {
+    "mag": "current_readback",
+    "vac": "pressure_readback",
+    "cool": "temp_readback",
 }
 
 
@@ -304,6 +318,13 @@ class DeviceCatalogCache:
         self._by_name: dict[str, dict[str, Any]] = {}
         self._loaded_at: float = 0.0
 
+    @property
+    def session(self):
+        """The bridge's live MCP session - exposed so B4's auto-chart
+        enrichment can issue its own get_history calls without needing a
+        second get_session callable threaded through separately."""
+        return self._get_session()
+
     async def _refresh(self) -> None:
         session = self._get_session()
         assert session is not None, "call after ArgusMcpBridge.connect()"
@@ -353,6 +374,121 @@ def build_widget_content(tool_name: str, beamline_device: dict[str, Any]) -> dic
         "widget_type": widget_type,
         "config": {"pvPrefix": pv_prefix, "viewMode": "essential"},
     }
+
+
+def resolve_chart_pv(beamline_device: dict[str, Any]) -> list[dict[str, str]] | None:
+    """A resolved BeamlineDevice -> the PV(s) worth auto-charting on a
+    device lookup, as a list of {"label", "pv"} (normally one entry, two
+    for the BPM X/Y heuristic). None when this devgroup has no known
+    auto-chart PV - v1 coverage is deliberately narrow (mag/vac/cool via
+    key_pvs, confirmed live 2026-08-04 to actually be populated for those
+    three; mot via the .RBV suffix fallback since real motor devices'
+    key_pvs is confirmed empty; plus the BPM name heuristic) - guessing
+    wrong here is worse than showing no chart at all."""
+    name = beamline_device.get("name")
+    iocprefix = beamline_device.get("iocprefix")
+    if not name or not iocprefix:
+        return None
+    pv_prefix = resolve_device_pv_prefix(name, iocprefix)
+
+    if "bpm" in name.lower():
+        return [
+            {"label": "X", "pv": f"{pv_prefix}:SA:X"},
+            {"label": "Y", "pv": f"{pv_prefix}:SA:Y"},
+        ]
+
+    devgroup = beamline_device.get("devgroup")
+    chart_role = DEVGROUP_CHART_ROLE.get(devgroup)
+    key_pvs = beamline_device.get("key_pvs") or {}
+    if chart_role and key_pvs.get(chart_role):
+        pv = key_pvs[chart_role]
+        return [{"label": pv, "pv": pv}]
+
+    if devgroup == "mot":
+        pv = f"{pv_prefix}.RBV"
+        return [{"label": pv, "pv": pv}]
+
+    return None
+
+
+# Auto-chart enrichment issues its own get_history call(s) *inside* the
+# tool response the LLM is waiting on (see argus_mcp_bridge.py's _call() -
+# emit_content_for_tool is awaited before returning). A hard per-PV cap
+# keeps a slow archiver from stalling the whole turn for long - this same
+# tool family (diagnose_device/device_status) has already been observed
+# LIVE to hang 3-10s on its own internal providers (see DeviceCatalogCache
+# docstring / the B3 live smoke test), so this is not theoretical caution.
+AUTO_CHART_TIMEOUT_S = 4.0
+AUTO_CHART_HOURS = 1.0
+
+
+async def _fetch_auto_chart_series(session: ClientSession, pv_name: str, label: str) -> tuple[dict[str, Any] | None, int]:
+    """One PV's recent history -> a chart series dict {label, pv, t, v},
+    plus how many points the downsample dropped. Best-effort: any failure
+    (timeout, bad JSON, empty samples) returns (None, 0), never raises -
+    one PV's history being unavailable shouldn't cancel a BPM's other
+    series, let alone the widget that already got sent alongside it."""
+    try:
+        result = await asyncio.wait_for(
+            session.call_tool("get_history", {"pv_name": pv_name, "hours": AUTO_CHART_HOURS}),
+            timeout=AUTO_CHART_TIMEOUT_S,
+        )
+    except Exception:
+        return None, 0
+    text = "\n".join(c.text for c in result.content if getattr(c, "text", None))
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return None, 0
+    if not isinstance(payload, dict) or payload.get("status") != "success":
+        return None, 0
+    history = payload.get("history")
+    if not isinstance(history, dict):
+        return None, 0
+    samples = history.get("samples")
+    if not isinstance(samples, list) or not samples:
+        return None, 0
+    kept, total = _downsample(samples)
+    t: list[int] = []
+    v: list[float] = []
+    for sample in kept:
+        ts = _iso_to_epoch_ms(sample.get("timestamp", ""))
+        value = sample.get("value")
+        if ts is None or not isinstance(value, (int, float)):
+            continue
+        t.append(ts)
+        v.append(float(value))
+    if not t:
+        return None, 0
+    return {"label": label, "pv": pv_name, "t": t, "v": v}, max(0, total - len(t))
+
+
+async def build_auto_chart_content(session: ClientSession, tool_name: str, beamline_device: dict[str, Any]) -> dict[str, Any] | None:
+    """Fetch and shape a trend chart for whatever PV(s) resolve_chart_pv
+    finds for this device - kwargs for events.send_content_chart with
+    source="auto_enrichment" (vs. "tool" for a direct get_history call in
+    B1's CONTENT_CHART_DIRECT_TOOLS path). The (possibly two, for BPM)
+    get_history calls run concurrently; None if every one comes back
+    empty/errored/timed out - see _fetch_auto_chart_series."""
+    pv_specs = resolve_chart_pv(beamline_device)
+    if not pv_specs:
+        return None
+    results = await asyncio.gather(
+        *(_fetch_auto_chart_series(session, spec["pv"], spec["label"]) for spec in pv_specs)
+    )
+    series = [s for s, _ in results if s is not None]
+    if not series:
+        return None
+    truncated_points = sum(n for _, n in results)
+    content: dict[str, Any] = {
+        "tool": tool_name,
+        "title": f"{beamline_device.get('name')} - trend",
+        "series": series,
+        "source": "auto_enrichment",
+    }
+    if truncated_points:
+        content["truncated"] = {"points": truncated_points}
+    return content
 
 
 async def emit_content_for_tool(
@@ -406,3 +542,12 @@ async def emit_content_for_tool(
         content = build_widget_content(tool_name, beamline_device)
         if content is not None:
             await send_content_widget(room, **content)
+
+        # B4: transparently attach a trend chart alongside the widget, for
+        # whatever PV(s) resolve_chart_pv finds - independent of whether
+        # the widget itself was sent (a devgroup with no widget mapping,
+        # e.g. diag, might still resolve nothing here either, that's fine).
+        if catalog.session is not None:
+            chart_content = await build_auto_chart_content(catalog.session, tool_name, beamline_device)
+            if chart_content is not None:
+                await send_content_chart(room, **chart_content)
