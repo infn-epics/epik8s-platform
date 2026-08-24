@@ -1,146 +1,186 @@
+import fnmatch
 import os
-import re
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 import requests
 from fastmcp import FastMCP
 
 
-app = FastMCP("rag-mcp")
+app = FastMCP("rag-documentation")
 
-QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant.ai-platform.svc.cluster.local:6333").rstrip("/")
-DEFAULT_COLLECTION = os.getenv("DEFAULT_COLLECTION", "confluence-docs")
-QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
-REQUEST_TIMEOUT_SECONDS = int(os.getenv("REQUEST_TIMEOUT_SECONDS", "20"))
-
+RAGFLOW_BASE_URL = os.environ["RAGFLOW_BASE_URL"].rstrip("/")
+RAGFLOW_API_KEY = os.environ["RAGFLOW_API_KEY"]
+DATASET_NAME_GLOBS = os.getenv("DATASET_NAME_GLOBS", "*")
+REQUEST_TIMEOUT_SECONDS = int(os.getenv("REQUEST_TIMEOUT_SECONDS", "30"))
+DATASET_CACHE_TTL_SECONDS = int(os.getenv("DATASET_CACHE_TTL_SECONDS", "300"))
 
 session = requests.Session()
+_dataset_cache: tuple[float, list[dict[str, Any]]] = (0.0, [])
 
 
-def _qdrant_headers() -> dict[str, str]:
-  headers = {"Content-Type": "application/json"}
-  if QDRANT_API_KEY:
-    headers["api-key"] = QDRANT_API_KEY
-  return headers
+def _headers() -> dict[str, str]:
+  return {
+    "Authorization": f"Bearer {RAGFLOW_API_KEY}",
+    "Content-Type": "application/json",
+  }
 
 
-def _tokenize(query: str) -> list[str]:
-  return [t for t in re.findall(r"[a-zA-Z0-9]+", query.lower()) if len(t) >= 3]
+def _response_data(response: requests.Response) -> Any:
+  response.raise_for_status()
+  payload = response.json()
+  if payload.get("code", 0) != 0:
+    raise RuntimeError(f"RAGFlow error: {payload.get('message', 'unknown error')}")
+  return payload.get("data")
 
 
-def _snippet(text: str, max_len: int = 280) -> str:
-  if len(text) <= max_len:
-    return text
-  return text[: max_len - 3] + "..."
+def _all_datasets(force_refresh: bool = False) -> list[dict[str, Any]]:
+  global _dataset_cache
 
+  cached_at, cached_datasets = _dataset_cache
+  if not force_refresh and cached_datasets and time.monotonic() - cached_at < DATASET_CACHE_TTL_SECONDS:
+    return cached_datasets
 
-def _score_point(payload: dict[str, Any], tokens: list[str]) -> float:
-  title = str(payload.get("title", "")).lower()
-  text = str(payload.get("text", "")).lower()
-  score = 0.0
-  for token in tokens:
-    if token in title:
-      score += 5.0
-    score += float(text.count(token))
-  return score
-
-
-def _iter_points(collection: str, max_points: int = 5000) -> list[dict[str, Any]]:
-  points: list[dict[str, Any]] = []
-  offset = None
-  while len(points) < max_points:
-    payload = {
-      "limit": 256,
-      "with_payload": True,
-      "with_vector": False,
-    }
-    if offset is not None:
-      payload["offset"] = offset
-
-    resp = session.post(
-      f"{QDRANT_URL}/collections/{collection}/points/scroll",
-      headers=_qdrant_headers(),
-      json=payload,
+  datasets_by_id: dict[str, dict[str, Any]] = {}
+  page_size = 100
+  for page in range(1, 101):
+    response = session.get(
+      f"{RAGFLOW_BASE_URL}/api/v1/datasets",
+      headers=_headers(),
+      params={"page": page, "page_size": page_size},
       timeout=REQUEST_TIMEOUT_SECONDS,
     )
-    resp.raise_for_status()
-
-    result = resp.json().get("result", {})
-    batch = result.get("points", [])
-    if not batch:
+    batch = _response_data(response) or []
+    for dataset in batch:
+      if dataset.get("id"):
+        datasets_by_id[dataset["id"]] = dataset
+    if len(batch) < page_size:
       break
 
-    points.extend(batch)
-    offset = result.get("next_page_offset")
-    if offset is None:
-      break
+  datasets = sorted(datasets_by_id.values(), key=lambda item: item.get("name", "").lower())
+  _dataset_cache = (time.monotonic(), datasets)
+  return datasets
 
-  return points
+
+def _patterns(name_globs: str = "") -> list[str]:
+  configured = name_globs.strip() or DATASET_NAME_GLOBS
+  return [pattern.strip().lower() for pattern in configured.split(",") if pattern.strip()]
+
+
+def _selected_datasets(name_globs: str = "", force_refresh: bool = False) -> list[dict[str, Any]]:
+  patterns = _patterns(name_globs)
+  return [
+    dataset
+    for dataset in _all_datasets(force_refresh)
+    if any(fnmatch.fnmatchcase(str(dataset.get("name", "")).lower(), pattern) for pattern in patterns)
+  ]
+
+
+def _dataset_summary(dataset: dict[str, Any]) -> dict[str, Any]:
+  return {
+    "id": dataset.get("id"),
+    "name": dataset.get("name"),
+    "description": dataset.get("description", ""),
+    "document_count": dataset.get("document_count", 0),
+    "chunk_count": dataset.get("chunk_count", 0),
+  }
+
+
+def _search_dataset(
+  dataset: dict[str, Any],
+  query: str,
+  limit: int,
+  similarity_threshold: float,
+) -> dict[str, Any]:
+  response = requests.post(
+    f"{RAGFLOW_BASE_URL}/api/v1/retrieval",
+    headers=_headers(),
+    json={
+      "question": query,
+      "dataset_ids": [dataset["id"]],
+      "page_size": limit,
+      "similarity_threshold": similarity_threshold,
+    },
+    timeout=REQUEST_TIMEOUT_SECONDS,
+  )
+  return _response_data(response) or {}
 
 
 @app.tool()
-def search_confluence(
-  query: str,
-  space_key: str = "LDCG",
-  limit: int = 5,
-  collection: str = "",
-) -> dict[str, Any]:
-  """Search ingested Confluence chunks in Qdrant and return top matching passages."""
-  effective_collection = collection.strip() or DEFAULT_COLLECTION
-  tokens = _tokenize(query)
-  if not tokens:
-    return {
-      "collection": effective_collection,
-      "space_key": space_key,
-      "query": query,
-      "matches": [],
-      "note": "Query is too short. Provide a more specific query.",
-    }
-
-  points = _iter_points(effective_collection)
-  wanted_space = space_key.strip().lower()
-  ranked = []
-  for p in points:
-    payload = p.get("payload", {})
-    if wanted_space and str(payload.get("space_key", "")).lower() != wanted_space:
-      continue
-
-    score = _score_point(payload, tokens)
-    if score <= 0:
-      continue
-
-    ranked.append(
-      {
-        "score": round(score, 3),
-        "title": payload.get("title", ""),
-        "url": payload.get("url", ""),
-        "updated_at": payload.get("updated_at", ""),
-        "chunk_index": payload.get("chunk_index", 0),
-        "snippet": _snippet(str(payload.get("text", ""))),
-      }
-    )
-
-  ranked.sort(key=lambda x: x["score"], reverse=True)
+def list_datasets(name_globs: str = "", force_refresh: bool = False) -> dict[str, Any]:
+  """List accessible RAGFlow documentation datasets, optionally filtered by comma-separated name globs."""
+  datasets = _selected_datasets(name_globs, force_refresh)
   return {
-    "collection": effective_collection,
-    "space_key": space_key,
-    "query": query,
-    "matches": ranked[: max(1, min(limit, 20))],
-    "searched_points": len(points),
+    "configured_name_globs": _patterns(name_globs),
+    "dataset_count": len(datasets),
+    "datasets": [_dataset_summary(dataset) for dataset in datasets],
   }
 
 
 @app.tool()
-def get_collection_stats(collection: str = "") -> dict[str, Any]:
-  """Return Qdrant collection metadata, including points count and vector configuration."""
-  effective_collection = collection.strip() or DEFAULT_COLLECTION
-  resp = session.get(
-    f"{QDRANT_URL}/collections/{effective_collection}",
-    headers=_qdrant_headers(),
-    timeout=REQUEST_TIMEOUT_SECONDS,
-  )
-  resp.raise_for_status()
-  return resp.json().get("result", {})
+def search_documentation(
+  query: str,
+  limit: int = 8,
+  name_globs: str = "",
+  similarity_threshold: float = 0.2,
+) -> dict[str, Any]:
+  """Search all configured RAGFlow documentation datasets and return the most relevant chunks."""
+  query = query.strip()
+  if not query:
+    raise ValueError("query must not be empty")
+
+  datasets = _selected_datasets(name_globs)
+  if not datasets:
+    return {
+      "query": query,
+      "dataset_count": 0,
+      "datasets": [],
+      "matches": [],
+      "note": "No accessible dataset matches the configured name globs.",
+    }
+
+  bounded_limit = max(1, min(limit, 50))
+  bounded_threshold = max(0.0, min(similarity_threshold, 1.0))
+  searchable = [dataset for dataset in datasets if int(dataset.get("chunk_count") or 0) > 0]
+  matches = []
+  errors = []
+  total = 0
+  with ThreadPoolExecutor(max_workers=min(8, max(1, len(searchable)))) as executor:
+    futures = {
+      executor.submit(_search_dataset, dataset, query, bounded_limit, bounded_threshold): dataset
+      for dataset in searchable
+    }
+    for future in as_completed(futures):
+      dataset = futures[future]
+      try:
+        result = future.result()
+      except Exception as exc:
+        errors.append({"dataset": dataset.get("name", ""), "error": str(exc)})
+        continue
+
+      total += int(result.get("total") or 0)
+      for chunk in result.get("chunks") or []:
+        matches.append(
+          {
+            "dataset": dataset.get("name", ""),
+            "document": chunk.get("document_name") or chunk.get("docnm_kwd", ""),
+            "content": chunk.get("content") or chunk.get("content_with_weight", ""),
+            "similarity": chunk.get("similarity"),
+            "document_id": chunk.get("document_id") or chunk.get("doc_id"),
+          }
+        )
+
+  matches.sort(key=lambda match: float(match.get("similarity") or 0), reverse=True)
+
+  return {
+    "query": query,
+    "dataset_count": len(datasets),
+    "datasets": [dataset.get("name", "") for dataset in datasets],
+    "matches": matches[:bounded_limit],
+    "total": total,
+    "dataset_errors": errors,
+  }
 
 
 if __name__ == "__main__":

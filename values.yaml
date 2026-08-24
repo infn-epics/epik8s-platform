@@ -553,6 +553,12 @@ aiPlatform:
       replicas: 2
       minReplicas: 2
       maxReplicas: 10
+      baseUrl: ""
+      apiKeySecretName: argus-librechat-credentials
+      apiKeySecretKey: RAGFLOW_API_KEY
+      datasetNameGlobs: "*"
+      datasetCacheTtlSeconds: "300"
+      requestTimeoutSeconds: "30"
       noProxy: "localhost,127.0.0.1,.svc,.cluster.local,10.0.0.0/8,192.168.0.0/16"
       resources:
         requests: { cpu: 200m, memory: 256Mi }
@@ -638,8 +644,8 @@ aiPlatform:
         type: streamable-http
         url: "http://rag-mcp.ai-platform.svc.cluster.local:8080/mcp"
         chatMenu: true
-        title: "Confluence RAG"
-        description: "Search ingested Confluence chunks in Qdrant (LDCG by default)."
+        title: "RAG Documentation"
+        description: "Search all documentation datasets available in RAGFlow."
       ## Loki log search. Unlike the two above, this MCP server's WORKLOAD is NOT
       ## deployed by this chart's mcp.yaml - it is managed by the k8sda root-app
       ## (charts/loki-mcp), which owns the Loki it queries. This entry only

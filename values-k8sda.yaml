@@ -711,23 +711,25 @@ aiPlatform:
     enabled: true
 
   mcp:
-    ## Neither kubernetes-mcp nor rag-mcp is actually deployed on k8sda yet
-    ## (no mcp.yaml apply has ever been done here) - values.yaml's
-    ## enabled: true is aspirational/default, not this site's live state.
-    ## Confirmed live 2026-07-29: with these left at the values.yaml
-    ## default, voice-agent.yaml wires KUBERNETES_MCP_URL/RAG_MCP_URL to
-    ## Services that don't exist, and the agent crashes on every session
-    ## with `httpcore.ConnectError: Name or service not known` trying to
-    ## reach them - unrelated to and blocking the actually-working
-    ## argus-mcp beamline PV/device tools. Flip back to true (or remove
-    ## this override) once mcp.yaml is deployed here for real.
+    ## Do not deploy the historical http-echo placeholders on k8sda.
+    placeholders:
+      epics-mcp:
+        enabled: false
+      git-mcp:
+        enabled: false
     kubernetesMcp:
-      enabled: false
+      enabled: true
       ingress:
         enabled: true
         host: k8sda-mcp.k8sda.lnf.infn.it
     ragMcp:
-      enabled: false
+      enabled: true
+      baseUrl: "https://ragflow-api-lnf.131.154.99.90.myip.cloud.infn.it"
+      apiKeySecretName: argus-librechat-credentials
+      apiKeySecretKey: RAGFLOW_API_KEY
+      ## Discover every dataset accessible to this service account. The list
+      ## is cached briefly and refreshes automatically as datasets are added.
+      datasetNameGlobs: "*"
 
   ## NOTE: unlike the rest of this file, there is no live centralized
   ## LibreChat to reproduce here - this is new capability, not codification.

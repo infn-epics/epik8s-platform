@@ -316,23 +316,19 @@ spec:
           env:
             - name: MCP_TRANSPORT
               value: streamable-http
-            - name: QDRANT_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: mcp-config
-                  key: qdrant-url
-            - name: DEFAULT_COLLECTION
-              valueFrom:
-                configMapKeyRef:
-                  name: mcp-config
-                  key: rag-default-collection
-            - name: QDRANT_API_KEY
+            - name: RAGFLOW_BASE_URL
+              value: {{ $v.baseUrl | quote }}
+            - name: RAGFLOW_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: qdrant-secrets
-                  key: api-key
+                  name: {{ $v.apiKeySecretName }}
+                  key: {{ $v.apiKeySecretKey }}
+            - name: DATASET_NAME_GLOBS
+              value: {{ $v.datasetNameGlobs | quote }}
+            - name: DATASET_CACHE_TTL_SECONDS
+              value: {{ $v.datasetCacheTtlSeconds | quote }}
             - name: REQUEST_TIMEOUT_SECONDS
-              value: "20"
+              value: {{ $v.requestTimeoutSeconds | quote }}
             {{- if $.Values.aiPlatform.proxy.enabled }}
             - name: HTTP_PROXY
               value: {{ $.Values.aiPlatform.proxy.httpProxy }}
@@ -341,6 +337,21 @@ spec:
             - name: NO_PROXY
               value: {{ $v.noProxy }}
             {{- end }}
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+          startupProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 60
           resources:
             {{- toYaml $v.resources | nindent 12 }}
           volumeMounts:
