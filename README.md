@@ -134,6 +134,7 @@ aiPlatform:
       - name: btf-argus
         namespace: btf
         serviceName: argus-argus-helm-chart-argus-mcp # confirm, don't assume - see below
+        roomName: btf-argus-control-room
         # port defaults to 8000, path defaults to "/sse"
 ```
 
@@ -181,9 +182,11 @@ components, one Helm template each, same convention as everything else in
   - **Tools**: `kubernetes-mcp` + `rag-mcp` via `livekit-agents`' native
     MCP integration (their entire tool surface, since both are read-only
     by construction - see their own RBAC/Qdrant-client code), plus one
-    `ArgusMcpBridge` per `aiPlatform.librechat.argusMcpServers` entry
-    (reused, not duplicated - same beamline argus-mcp deployments
-    LibreChat already talks to).
+    `ArgusMcpBridge` selected by the current LiveKit room's exact
+    `roomName` match in `aiPlatform.librechat.argusMcpServers` (reused, not
+    duplicated - same beamline argus-mcp deployments LibreChat already talks
+    to). Unknown or ambiguously configured rooms fail closed before any
+    beamline tool is exposed.
 
 ### Safety: why the agent's tool access is an explicit allowlist
 
@@ -244,15 +247,11 @@ epicsConfiguration:
 
 `tokenEndpoint`/`serverUrl` are this chart's `aiPlatform.voiceToken.ingress.host`
 / `aiPlatform.livekit.ingress.host` (both need `ingress.enabled: true` and a
-real DNS host set, same pattern as every other `ingress.host` in this
-chart). `roomName` is free-form - pick one per beamline (or share one
-central room, matching how `argusMcpServers` already centralizes
-per-beamline MCP access into one LibreChat) and pass the same value to
-`aiPlatform.voiceAgent`'s room-join scope... **note this phase's agent
-joins whatever room a token was minted for**, since `voice-token-server.py`
-doesn't validate the room name against an allowlist either (see that
-file's own docstring) - fine while this stays experimental and
-not-yet-linked-from-anywhere-public, revisit before wider rollout.
+real DNS host set, same pattern as every other `ingress.host` in this chart).
+Set the dashboard's `roomName` to the exact `roomName` on that beamline's
+`aiPlatform.librechat.argusMcpServers` entry. The token service rejects rooms
+outside this generated allowlist, and the voice agent requires exactly one
+matching MCP server, so rooms cannot share or inherit cross-beamline tools.
 
 ## Centralized logging
 

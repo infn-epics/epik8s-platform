@@ -664,7 +664,9 @@ aiPlatform:
     ## that release set fullnameOverride - confirm with
     ## `kubectl get svc -n <beamline-namespace> | grep argus-mcp` before
     ## adding an entry here, don't assume.
-    ## {name, namespace, serviceName, port, path, title, description}
+    ## roomName is required when voiceAgent or voiceToken is enabled and binds
+    ## that LiveKit room to exactly one beamline MCP server.
+    ## {name, namespace, serviceName, roomName, port, path, title, description}
     argusMcpServers: []
 
     ## A lean argus-mcp instance dedicated to THIS LibreChat (not any one

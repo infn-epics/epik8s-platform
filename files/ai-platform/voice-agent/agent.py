@@ -11,7 +11,7 @@ Wires together:
         integration - their ENTIRE tool surface is exposed as-is, since
         both are read-only by construction (see mcp.yaml's RBAC / Qdrant
         read-only client).
-      * one ArgusMcpBridge per configured beamline argus-mcp server
+      * exactly one ArgusMcpBridge selected by the current LiveKit room
         (argus_mcp_bridge.py) - an EXPLICIT read-only tool allowlist,
         since those servers mix read tools with set_pv/set_pv_value/
         restart_ioc/execute_procedure/create_logbook_entry.
@@ -75,6 +75,7 @@ from livekit.plugins.openai.tts import AUDIO_STREAM_MODELS as _OPENAI_AUDIO_STRE
 
 from argus_mcp_bridge import ArgusMcpBridge, ArgusMcpServerConfig
 from events import send_phase, send_transcript
+from room_scope import RoomScopeError, select_server_for_room
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("voice-agent")
@@ -124,10 +125,10 @@ LLM_HTTP_PROXY = os.environ.get("LLM_HTTP_PROXY", "")
 KUBERNETES_MCP_URL = os.environ.get("KUBERNETES_MCP_URL", "")
 RAG_MCP_URL = os.environ.get("RAG_MCP_URL", "")
 
-# JSON list of {"name","url","title"} - one entry per beamline argus-mcp
+# JSON list of {"name","url","title","roomName"} - one entry per beamline argus-mcp
 # server, mirrors aiPlatform.librechat.argusMcpServers in values.yaml
 # (same servers, different consumer). Example:
-#   [{"name":"btf-argus","url":"http://argus-argus-helm-chart-argus-mcp.btf.svc.cluster.local:8000/sse","title":"BTF ARGUS"}]
+#   [{"name":"btf-argus","url":"http://argus-argus-helm-chart-argus-mcp.btf.svc.cluster.local:8000/sse","title":"BTF ARGUS","roomName":"btf-argus-control-room"}]
 ARGUS_MCP_SERVERS = json.loads(os.environ.get("ARGUS_MCP_SERVERS_JSON", "[]"))
 
 SYSTEM_PROMPT = """Sei ARGUS, l'assistente vocale del sistema di controllo dell'acceleratore.
@@ -354,16 +355,17 @@ async def entrypoint(ctx: JobContext) -> None:
 
     bridges: list[ArgusMcpBridge] = []
     argus_tools = []
-    for entry in ARGUS_MCP_SERVERS:
-        cfg = ArgusMcpServerConfig(name=entry["name"], url=entry["url"], title=entry.get("title", entry["name"]))
-        bridge = ArgusMcpBridge(ctx.room, cfg)
-        try:
-            await bridge.connect()
-        except Exception:
-            logger.exception("could not connect to argus-mcp server %s (%s) - skipping it for this session", cfg.name, cfg.url)
-            continue
-        bridges.append(bridge)
-        argus_tools.extend(await bridge.discover_tools())
+    try:
+        entry = select_server_for_room(ctx.room.name, ARGUS_MCP_SERVERS)
+    except RoomScopeError:
+        logger.exception("refusing voice session with invalid room-to-beamline mapping: %r", ctx.room.name)
+        raise
+
+    cfg = ArgusMcpServerConfig(name=entry["name"], url=entry["url"], title=entry.get("title", entry["name"]))
+    bridge = ArgusMcpBridge(ctx.room, cfg)
+    await bridge.connect()
+    bridges.append(bridge)
+    argus_tools.extend(await bridge.discover_tools())
 
     async def _cleanup() -> None:
         for bridge in bridges:
@@ -371,7 +373,13 @@ async def entrypoint(ctx: JobContext) -> None:
 
     ctx.add_shutdown_callback(_cleanup)
 
-    agent = ArgusAgent(instructions=SYSTEM_PROMPT, tools=argus_tools, mcp_servers=native_mcp_servers)
+    beamline_title = cfg.title or cfg.name
+    scoped_prompt = (
+        SYSTEM_PROMPT
+        + f"\nQuesta sessione riguarda esclusivamente {beamline_title}. "
+        + "Non rispondere con dati di altre beamline.\n"
+    )
+    agent = ArgusAgent(instructions=scoped_prompt, tools=argus_tools, mcp_servers=native_mcp_servers)
 
     llm_http_client = httpx.AsyncClient(proxy=LLM_HTTP_PROXY) if LLM_HTTP_PROXY else None
     llm_client = openai_sdk.AsyncClient(base_url=LLM_BASE_URL, api_key=LLM_API_KEY, http_client=llm_http_client)

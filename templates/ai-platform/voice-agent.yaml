@@ -8,9 +8,10 @@ no Service/Ingress here.
 
 argusMcpServers reuses aiPlatform.librechat.argusMcpServers (same beamline
 argus-mcp deployments LibreChat already talks to) rather than duplicating
-that list - the URL-construction formula below is copied verbatim from
-templates/ai-platform/librechat.yaml's own argusMcpServers handling to stay
-consistent if that convention ever changes.
+that list. Each entry also carries its exact LiveKit roomName; agent.py selects
+exactly one matching entry and fails closed otherwise. The URL-construction
+formula below is copied verbatim from templates/ai-platform/librechat.yaml's
+own argusMcpServers handling to stay consistent if that convention changes.
 */ -}}
 {{- if and .Values.aiPlatform.enabled .Values.aiPlatform.voiceAgent.enabled }}
 {{- $ns := .Values.aiPlatform.namespace }}
@@ -20,7 +21,8 @@ consistent if that convention ever changes.
 {{- $argusMcpEntries := list }}
 {{- range $lc.argusMcpServers }}
 {{- $url := printf "http://%s.%s.svc.cluster.local:%v%s" .serviceName .namespace (.port | default 8000) (.path | default "/sse") }}
-{{- $argusMcpEntries = append $argusMcpEntries (dict "name" .name "url" $url "title" (.title | default .name)) }}
+{{- $roomName := required (printf "aiPlatform.librechat.argusMcpServers[%s].roomName is required when voiceAgent is enabled" .name) .roomName }}
+{{- $argusMcpEntries = append $argusMcpEntries (dict "name" .name "url" $url "title" (.title | default .name) "roomName" $roomName) }}
 {{- end }}
 apiVersion: v1
 kind: ConfigMap
@@ -36,6 +38,8 @@ data:
 {{ .Files.Get "files/ai-platform/voice-agent/argus_content.py" | indent 4 }}
   events.py: |
 {{ .Files.Get "files/ai-platform/voice-agent/events.py" | indent 4 }}
+  room_scope.py: |
+{{ .Files.Get "files/ai-platform/voice-agent/room_scope.py" | indent 4 }}
 ---
 apiVersion: apps/v1
 kind: Deployment

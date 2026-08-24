@@ -802,11 +802,13 @@ aiPlatform:
       - name: sparc-argus
         namespace: sparc
         serviceName: argus-argus-helm-chart-argus-mcp
+        roomName: sparc-argus-control-room
         title: "SPARC ARGUS"
         description: "ARGUS accelerator-control assistant for the SPARC beamline."
       - name: euaps-argus
         namespace: euaps
         serviceName: argus-argus-helm-chart-argus-mcp
+        roomName: euaps-argus-control-room
         title: "EUAPS ARGUS"
         description: "ARGUS accelerator-control assistant for the EUAPS beamline."
       ## btf keeps running its OWN dedicated LibreChat too (2 BTF-specific
@@ -816,6 +818,7 @@ aiPlatform:
       - name: btf-argus
         namespace: btf
         serviceName: argus-argus-helm-chart-argus-mcp
+        roomName: btf-argus-control-room
         title: "BTF ARGUS"
         description: "ARGUS accelerator-control assistant for the BTF beamline."
 

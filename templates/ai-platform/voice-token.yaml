@@ -13,6 +13,11 @@ change aiPlatform.livekit.existingSecret.
 {{- if and .Values.aiPlatform.enabled .Values.aiPlatform.voiceToken.enabled }}
 {{- $ns := .Values.aiPlatform.namespace }}
 {{- $v := .Values.aiPlatform.voiceToken }}
+{{- $allowedRooms := list }}
+{{- range .Values.aiPlatform.librechat.argusMcpServers }}
+{{- $roomName := required (printf "aiPlatform.librechat.argusMcpServers[%s].roomName is required when voiceToken is enabled" .name) .roomName }}
+{{- $allowedRooms = append $allowedRooms $roomName }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -21,6 +26,8 @@ metadata:
 data:
   server.py: |
 {{ .Files.Get "files/ai-platform/voice-token-server.py" | indent 4 }}
+  room_scope.py: |
+{{ .Files.Get "files/ai-platform/voice-agent/room_scope.py" | indent 4 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -63,6 +70,8 @@ spec:
                   key: api-secret
             - name: TOKEN_TTL_SECONDS
               value: {{ $v.tokenTtlSeconds | quote }}
+            - name: ALLOWED_ROOMS_JSON
+              value: {{ $allowedRooms | uniq | toJson | quote }}
             {{- if $.Values.aiPlatform.proxy.enabled }}
             - name: HTTP_PROXY
               value: {{ $.Values.aiPlatform.proxy.httpProxy }}
@@ -97,8 +106,7 @@ spec:
             {{- toYaml $v.resources | nindent 12 }}
           volumeMounts:
             - name: voice-token-code
-              mountPath: /app/server.py
-              subPath: server.py
+              mountPath: /app
       volumes:
         - name: voice-token-code
           configMap:
