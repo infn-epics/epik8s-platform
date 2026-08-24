@@ -344,6 +344,20 @@ class ArgusAgent(Agent):
             _emit_phase(turn_id, "tts", "end")
 
 
+async def _send_transcript_safely(room, role: str, text: str, metrics: dict[str, float] | None) -> None:
+    """Publish the completion mirror without hiding data-channel failures.
+
+    The callback is intentionally fire-and-forget because LiveKit's event
+    emitter is synchronous. Keep the task, however, so a packet-size,
+    disconnect, or API error is logged instead of becoming an unobserved task
+    exception that leaves the dashboard waiting forever.
+    """
+    try:
+        await send_transcript(room, role, text, final=True, metrics=metrics)
+    except Exception:
+        logger.exception("failed to publish final %s transcript", role)
+
+
 async def entrypoint(ctx: JobContext) -> None:
     await ctx.connect()
 
@@ -403,7 +417,7 @@ async def entrypoint(ctx: JobContext) -> None:
         if not text:
             return
         metrics = _extract_metrics(item)
-        asyncio.create_task(send_transcript(ctx.room, role, text, final=True, metrics=metrics))
+        asyncio.create_task(_send_transcript_safely(ctx.room, role, text, metrics))
 
     await session.start(agent=agent, room=ctx.room)
 
