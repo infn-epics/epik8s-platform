@@ -483,7 +483,27 @@ kube-prometheus-stack:
   ## that release name for free - see README).
   fullnameOverride: prometheus-kube-prometheus
   alertmanager:
-    enabled: false
+    enabled: true
+    alertmanagerSpec:
+      replicas: 1
+    config:
+      global:
+        resolve_timeout: 5m
+        smtp_smarthost: smtp.lnf.infn.it:25
+        smtp_from: k8sda-alerts@lnf.infn.it
+      route:
+        receiver: platform-email
+        group_by: [alertname, namespace, pod]
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 12h
+      receivers:
+        - name: platform-email
+          email_configs:
+            - to: andrea.michelotti@lnf.infn.it
+              send_resolved: true
+            - to: riccardo.gargana@lnf.infn.it
+              send_resolved: true
   grafana:
     enabled: false ## grafana is deployed as its own separate release, see below
   kubeStateMetrics:
@@ -505,6 +525,58 @@ kube-prometheus-stack:
     fullnameOverride: prometheus-kube-state-metrics
   prometheus-node-exporter:
     fullnameOverride: prometheus-prometheus-node-exporter
+  additionalPrometheusRulesMap:
+    platform-alerts:
+      groups:
+        - name: platform.node.resource
+          rules:
+            - alert: NodeCPUHigh
+              expr: |
+                (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100 > 85
+              for: 10m
+              labels:
+                severity: warning
+              annotations:
+                summary: "Node CPU usage is high"
+                description: "CPU usage has been above 85% for 10 minutes."
+            - alert: NodeMemoryHigh
+              expr: |
+                (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+              for: 10m
+              labels:
+                severity: warning
+              annotations:
+                summary: "Node memory usage is high"
+                description: "Memory usage has been above 90% for 10 minutes."
+            - alert: NodeFilesystemHigh
+              expr: |
+                (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"})) * 100 > 85
+              for: 15m
+              labels:
+                severity: warning
+              annotations:
+                summary: "Node filesystem usage is high"
+                description: "Filesystem usage has been above 85% for 15 minutes."
+        - name: platform.workload.alerts
+          rules:
+            - alert: PodOOMKilled
+              expr: |
+                increase(kube_pod_container_status_last_terminated_reason{reason="OOMKilled"}[5m]) > 0
+              for: 5m
+              labels:
+                severity: critical
+              annotations:
+                summary: "Pod container OOMKilled"
+                description: "A container was terminated because it ran out of memory."
+            - alert: BackupFailures
+              expr: |
+                increase(kube_job_failed{namespace="backup",job_name=~"cluster-backup.*"}[24h]) > 0
+              for: 5m
+              labels:
+                severity: critical
+              annotations:
+                summary: "Cluster backup job failures"
+                description: "The cluster backup job has failed recently."
 
 ## grafana subchart values - exact USER-SUPPLIED VALUES from the live "grafana" helm
 ## release (grafana-10.3.0), EXCEPT adminUser/adminPassword: the live release set
