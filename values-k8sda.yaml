@@ -498,6 +498,7 @@ kube-prometheus-stack:
         group_interval: 5m
         repeat_interval: 12h
       receivers:
+        - name: "null"
         - name: platform-email
           email_configs:
             - to: andrea.michelotti@lnf.infn.it
