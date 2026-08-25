@@ -6,6 +6,10 @@ deployed via `epik8s-chart` needs underneath it, kept separate from beamline
 charts (`epik8s-chart` and the per-facility `epik8-sparc` / `epik8s-btf` /
 `epik8s-eli` repos).
 
+Target direction: this chart is the single platform layer for an EPIK8S
+cluster, able to bootstrap an empty Kubernetes cluster (optionally including
+ArgoCD) and then operate as the ongoing owner of shared platform services.
+
 This codifies what is *actually running* on the `k8sda` cluster today into a
 Helm chart, so that state has a git source of truth for the first time. It does
 **not** change anything on the live cluster - see "What this is not" below.
@@ -45,13 +49,31 @@ below.
 
 This chart codifies **site-specific policy objects** - the CRs/values that
 encode "this cluster, these subnets, these hostnames, these credentials-by-reference".
-It does **not** install the underlying operators/controllers:
+It can also install selected dependencies directly (Helm subcharts), including
+an optional ArgoCD bootstrap mode for fresh clusters.
+
+## Bootstrap modes
+
+- `platformBootstrap.argocd.enabled=false` (default): normal mode, for clusters
+  where ArgoCD already exists and this chart is reconciled by ArgoCD.
+- `platformBootstrap.argocd.enabled=true`: bootstrap mode, installs ArgoCD
+  (`argo-cd` dependency) to seed a fresh cluster. Do not leave this enabled if
+  this same chart is later managed by ArgoCD, to avoid self-management loops.
+
+Shared services can be enabled/disabled per environment through values:
+
+- Backend stack (ECK/Strimzi operators + backend resources): `backend.enabled`
+- Monitoring stack: `monitoring.kubePrometheusStack.enabled`, `monitoring.grafana.enabled`
+- Logging stack: `logging.loki.enabled`, `logging.alloy.enabled`
+
+Underlying non-Helm infrastructure still remains a prerequisite:
 
 | Codified here | Prerequisite (install separately) |
 |---|---|
 | MetalLB `IPAddressPool` / `L2Advertisement` | MetalLB controller (native manifest, `quay.io/metallb/controller:v0.15.2` on this cluster - not a Helm release) |
 | `NetworkAttachmentDefinition`s | Multus, whereabouts IPAM (RKE2 addon on this cluster) |
 | `StorageClass`es | csi-driver-nfs, cephfs-csi-operator |
+| ArgoCD (optional) | none when `platformBootstrap.argocd.enabled=true`; otherwise pre-existing ArgoCD |
 | kube-prometheus-stack + grafana | ingress-nginx (RKE2 addon), cert-manager if TLS is terminated by cert-manager-issued secrets |
 | ai-platform workloads | GPU operator (for `vllm`'s `nvidia.com/gpu` request), ingress-nginx |
 | Elasticsearch/Kibana/Kafka CRs | eck-operator, strimzi-kafka-operator - both ARE Helm dependencies of this chart (see below), so nothing extra to install for those two specifically |

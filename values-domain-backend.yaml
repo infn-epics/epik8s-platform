@@ -1,0 +1,45 @@
+## Domain overlay: backend services only (Elasticsearch, MongoDB, Kafka).
+## Use together with values-k8sda.yaml.
+
+platformBootstrap:
+  argocd:
+    enabled: false
+
+backend:
+  enabled: true
+  eckOperator:
+    enabled: false
+  strimziOperator:
+    enabled: false
+  kibana:
+    enabled: false
+
+monitoring:
+  kubePrometheusStack:
+    enabled: false
+  grafana:
+    enabled: false
+
+networking:
+  enabled: false
+
+storage:
+  enabled: false
+
+sysctlTuning:
+  enabled: false
+
+clusterBackup:
+  enabled: false
+
+logging:
+  loki:
+    enabled: false
+  alloy:
+    enabled: false
+
+langfuse:
+  enabled: false
+
+aiPlatform:
+  enabled: false

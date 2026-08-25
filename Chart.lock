@@ -1,4 +1,7 @@
 dependencies:
+- name: argo-cd
+  repository: https://argoproj.github.io/argo-helm
+  version: 7.8.2
 - name: kube-prometheus-stack
   repository: https://prometheus-community.github.io/helm-charts
   version: 77.8.0
@@ -20,5 +23,5 @@ dependencies:
 - name: langfuse
   repository: https://langfuse.github.io/langfuse-k8s
   version: 1.5.40
-digest: sha256:210bd53294143756b1f05a42d89a9833096629ce0b5836841eb53c655284a45d
-generated: "2026-07-22T11:47:17.046075+02:00"
+digest: sha256:4bf8f411728efc288c829521bc30a727005357f76127980b3bdcd7616ff1fa49
+generated: "2026-08-25T16:37:08.855788+02:00"

@@ -1,0 +1,48 @@
+## Domain overlay: Prometheus stack only.
+## Use together with values-k8sda.yaml.
+
+platformBootstrap:
+  argocd:
+    enabled: false
+
+monitoring:
+  kubePrometheusStack:
+    enabled: true
+  grafana:
+    enabled: false
+
+## Avoid CRD re-apply issues during takeover; CRDs already exist in cluster.
+kube-prometheus-stack:
+  crds:
+    enabled: false
+
+backend:
+  enabled: false
+  eckOperator:
+    enabled: false
+  strimziOperator:
+    enabled: false
+
+networking:
+  enabled: false
+
+storage:
+  enabled: false
+
+sysctlTuning:
+  enabled: false
+
+clusterBackup:
+  enabled: false
+
+logging:
+  loki:
+    enabled: false
+  alloy:
+    enabled: false
+
+langfuse:
+  enabled: false
+
+aiPlatform:
+  enabled: false

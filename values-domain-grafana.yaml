@@ -1,0 +1,43 @@
+## Domain overlay: Grafana only.
+## Use together with values-k8sda.yaml.
+
+platformBootstrap:
+  argocd:
+    enabled: false
+
+monitoring:
+  kubePrometheusStack:
+    enabled: false
+  grafana:
+    enabled: true
+
+backend:
+  enabled: false
+  eckOperator:
+    enabled: false
+  strimziOperator:
+    enabled: false
+
+networking:
+  enabled: false
+
+storage:
+  enabled: false
+
+sysctlTuning:
+  enabled: false
+
+clusterBackup:
+  enabled: false
+
+logging:
+  loki:
+    enabled: false
+  alloy:
+    enabled: false
+
+langfuse:
+  enabled: false
+
+aiPlatform:
+  enabled: false

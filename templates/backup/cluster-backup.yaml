@@ -1,0 +1,168 @@
+{{- if .Values.clusterBackup.enabled }}
+{{- $ns := .Values.clusterBackup.namespace | default "backup" }}
+{{- $storageClassName := .Values.clusterBackup.storage.storageClassName | default "nfs20t" }}
+{{- $claimName := .Values.clusterBackup.storage.existingClaim | default "backup-storage" }}
+{{- if .Values.clusterBackup.createNamespace }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $ns }}
+  labels:
+    app.kubernetes.io/part-of: epik8s-platform
+{{- end }}
+{{- if .Values.clusterBackup.storage.create }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $claimName }}
+  namespace: {{ $ns }}
+spec:
+  accessModes:
+    - {{ .Values.clusterBackup.storage.accessMode | default "ReadWriteMany" }}
+  resources:
+    requests:
+      storage: {{ .Values.clusterBackup.storage.size | default "500Gi" }}
+  storageClassName: {{ $storageClassName }}
+{{- end }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup-sa
+  namespace: {{ $ns }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: backup-cluster-role
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - namespaces
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups: [""]
+    resources:
+      - pods/exec
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: backup-cluster-role-binding
+subjects:
+  - kind: ServiceAccount
+    name: backup-sa
+    namespace: {{ $ns }}
+roleRef:
+  kind: ClusterRole
+  name: backup-cluster-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cluster-backup
+  namespace: {{ $ns }}
+spec:
+  schedule: {{ .Values.clusterBackup.schedule | quote }}
+  suspend: {{ .Values.clusterBackup.suspend | default false }}
+  concurrencyPolicy: {{ .Values.clusterBackup.concurrencyPolicy | default "Forbid" }}
+  successfulJobsHistoryLimit: {{ .Values.clusterBackup.successfulJobsHistoryLimit | default 3 }}
+  failedJobsHistoryLimit: {{ .Values.clusterBackup.failedJobsHistoryLimit | default 3 }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.clusterBackup.backoffLimit | default 2 }}
+      activeDeadlineSeconds: {{ .Values.clusterBackup.activeDeadlineSeconds | default 14400 }}
+      template:
+        spec:
+          serviceAccountName: backup-sa
+          restartPolicy: Never
+          containers:
+            - name: backup-job
+              image: {{ .Values.clusterBackup.image | default "bitnami/kubectl:latest" }}
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -e
+
+                  TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+                  BACKUP_ROOT="/backup/$TIMESTAMP"
+                  CLUSTER_DIR="$BACKUP_ROOT/cluster"
+                  SERVICES_DIR="$BACKUP_ROOT/central-services"
+                  mkdir -p "$BACKUP_ROOT"
+                  mkdir -p "$CLUSTER_DIR"
+                  mkdir -p "$SERVICES_DIR"
+
+                  echo "Starting cluster-scoped platform backup at $TIMESTAMP"
+
+                  echo "Backing up storage classes managed by epik8s-platform"
+                  {{- range $sc := .Values.storage.classes }}
+                  kubectl get storageclass {{$sc.name}} -o yaml > "$CLUSTER_DIR/storageclass-{{$sc.name}}.yaml" || true
+                  {{- end }}
+
+                  echo "Backing up cluster roles and bindings managed by epik8s-platform"
+                  {{- range $name := .Values.clusterBackup.clusterRoles }}
+                  kubectl get clusterrole {{$name}} -o yaml > "$CLUSTER_DIR/clusterrole-{{$name}}.yaml" || true
+                  {{- end }}
+                  {{- range $name := .Values.clusterBackup.clusterRoleBindings }}
+                  kubectl get clusterrolebinding {{$name}} -o yaml > "$CLUSTER_DIR/clusterrolebinding-{{$name}}.yaml" || true
+                  {{- end }}
+
+                  echo "Backing up cluster namespace objects (metadata only)"
+                  kubectl get namespace -o yaml > "$CLUSTER_DIR/namespaces.yaml"
+
+                  echo "Capturing platform desired node label state from values"
+                  cat > "$CLUSTER_DIR/node-labels-from-values.json" <<'EOF'
+{{ toJson .Values.networking.nodeLabels | nindent 18 }}
+                  EOF
+
+                  {{- if .Values.clusterBackup.centralServices.elasticsearch.enabled }}
+                  echo "Backing up central Elasticsearch"
+                  ES_PASSWORD=$(kubectl get secret {{ .Values.clusterBackup.centralServices.elasticsearch.passwordSecretName | default "elasticsearch-es-elastic-user" }} -n {{ .Values.clusterBackup.centralServices.elasticsearch.namespace | default "backend" }} -o jsonpath='{.data.{{ .Values.clusterBackup.centralServices.elasticsearch.passwordSecretKey | default "elastic" }}}' | base64 -d)
+                  curl -u "{{ .Values.clusterBackup.centralServices.elasticsearch.username | default "elastic" }}:$ES_PASSWORD" "http://{{ .Values.clusterBackup.centralServices.elasticsearch.host | default "elasticsearch-es-http.backend.svc" }}:{{ .Values.clusterBackup.centralServices.elasticsearch.port | default 9200 }}/_cat/indices?h=index" | grep -v '^\.' | while read -r index; do
+                    echo "  - backing up Elasticsearch index $index"
+                    curl -u "{{ .Values.clusterBackup.centralServices.elasticsearch.username | default "elastic" }}:$ES_PASSWORD" -XPUT "http://{{ .Values.clusterBackup.centralServices.elasticsearch.host | default "elasticsearch-es-http.backend.svc" }}:{{ .Values.clusterBackup.centralServices.elasticsearch.port | default 9200 }}/_snapshot/{{ .Values.clusterBackup.centralServices.elasticsearch.snapshotRepository | default "my_backup" }}/snapshot_${index}_$TIMESTAMP?wait_for_completion=true" \
+                      -H 'Content-Type: application/json' \
+                      -d "{\"indices\":\"$index\"}" || true
+                  done
+                  {{- end }}
+
+                  {{- if .Values.clusterBackup.centralServices.mongodb.enabled }}
+                  echo "Backing up central MongoDB"
+                  kubectl exec -n {{ .Values.clusterBackup.centralServices.mongodb.namespace | default "backend" }} {{ .Values.clusterBackup.centralServices.mongodb.podName | default "mongodb-0" }} -- mongodump --archive > "$SERVICES_DIR/mongodb_$TIMESTAMP.archive"
+                  {{- end }}
+
+                  {{- if .Values.clusterBackup.centralServices.grafana.enabled }}
+                  echo "Backing up central Grafana data directory"
+                  GRAFANA_POD=$(kubectl get pods -n {{ .Values.clusterBackup.centralServices.grafana.namespace | default "monitoring" }} -l '{{ .Values.clusterBackup.centralServices.grafana.podSelector | default "app.kubernetes.io/name=grafana" }}' -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+                  if [ -z "$GRAFANA_POD" ]; then
+                    echo "  - no Grafana pod found, skipping"
+                  else
+                    kubectl exec -n {{ .Values.clusterBackup.centralServices.grafana.namespace | default "monitoring" }} "$GRAFANA_POD" -- tar czf - -C {{ .Values.clusterBackup.centralServices.grafana.dataPath | default "/var/lib/grafana" }} . > "$SERVICES_DIR/grafana-data_$TIMESTAMP.tar.gz" || true
+                  fi
+                  {{- end }}
+
+                  echo "Cleaning backups older than {{ .Values.clusterBackup.retentionDays | default 30 }} days"
+                  find /backup -mindepth 1 -maxdepth 1 -type d -mtime +{{ .Values.clusterBackup.retentionDays | default 30 }} -exec rm -rf {} \;
+
+                  echo "Cluster-scoped backup completed: $BACKUP_ROOT"
+              resources:
+{{- toYaml .Values.clusterBackup.resources | nindent 16 }}
+              volumeMounts:
+                - name: backup-storage
+                  mountPath: /backup
+          volumes:
+            - name: backup-storage
+              persistentVolumeClaim:
+                claimName: {{ $claimName }}
+{{- end }}

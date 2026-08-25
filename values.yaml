@@ -40,6 +40,14 @@ sysctlTuning:
     maxUserInstances: 2048
     maxUserWatches: 1048576
 
+platformBootstrap:
+  ## Bootstrap-only toggle: enable to install ArgoCD into a fresh cluster.
+  ## Keep disabled when this chart is reconciled by ArgoCD itself.
+  argocd:
+    enabled: false
+    namespace: argocd
+    createNamespace: true
+
 monitoring:
   kubePrometheusStack:
     enabled: true
@@ -57,6 +65,56 @@ logging:
   alloy:
     enabled: true
 
+clusterBackup:
+  enabled: false
+  namespace: backup
+  createNamespace: false
+  schedule: "1 0 * * *"
+  suspend: false
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  backoffLimit: 2
+  activeDeadlineSeconds: 14400
+  retentionDays: 30
+  image: bitnami/kubectl:latest
+  centralServices:
+    elasticsearch:
+      enabled: true
+      namespace: backend
+      host: elasticsearch-es-http.backend.svc
+      port: 9200
+      username: elastic
+      passwordSecretName: elasticsearch-es-elastic-user
+      passwordSecretKey: elastic
+      snapshotRepository: my_backup
+    mongodb:
+      enabled: true
+      namespace: backend
+      podName: mongodb-0
+    grafana:
+      enabled: true
+      namespace: monitoring
+      podSelector: app.kubernetes.io/name=grafana
+      dataPath: /var/lib/grafana
+  clusterRoles:
+    - backup-cluster-role
+  clusterRoleBindings:
+    - backup-cluster-role-binding
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+  storage:
+    create: false
+    existingClaim: backup-storage
+    accessMode: ReadWriteMany
+    size: 500Gi
+    storageClassName: nfs20t
+
 ## LLM/MCP observability (LibreChat trace + feedback, ARGUS tool-call
 ## correlation) - deliberately its own toggle, not folded into logging.* or
 ## monitoring.*: it's application-level AI observability, not
@@ -66,6 +124,23 @@ langfuse:
 
 ## kube-prometheus-stack subchart values (dependency name: kube-prometheus-stack)
 kube-prometheus-stack: {}
+
+## argo-cd subchart values (dependency name: argo-cd)
+argo-cd:
+  ## The subchart must stay opt-in via platformBootstrap.argocd.enabled.
+  ## namespaceOverride lets this chart install ArgoCD into its canonical namespace
+  ## even when the parent release namespace differs.
+  namespaceOverride: argocd
+  crds:
+    install: true
+  global:
+    domain: ""
+  server:
+    ingress:
+      enabled: false
+  configs:
+    params:
+      server.insecure: true
 
 ## grafana subchart values (dependency name: grafana)
 grafana: {}

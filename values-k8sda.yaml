@@ -362,6 +362,49 @@ logging:
   alloy:
     enabled: true
 
+clusterBackup:
+  enabled: true
+  namespace: backup
+  createNamespace: false
+  schedule: "1 0 * * *"
+  suspend: false
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  backoffLimit: 2
+  activeDeadlineSeconds: 14400
+  retentionDays: 30
+  image: bitnami/kubectl:latest
+  centralServices:
+    elasticsearch:
+      enabled: true
+      namespace: backend
+      host: elasticsearch-es-http.backend.svc
+      port: 9200
+      username: elastic
+      passwordSecretName: elasticsearch-es-elastic-user
+      passwordSecretKey: elastic
+      snapshotRepository: my_backup
+    mongodb:
+      enabled: true
+      namespace: backend
+      podName: mongodb-0
+    grafana:
+      enabled: true
+      namespace: monitoring
+      podSelector: app.kubernetes.io/name=grafana
+      dataPath: /var/lib/grafana
+  clusterRoles:
+    - backup-cluster-role
+  clusterRoleBindings:
+    - backup-cluster-role-binding
+  storage:
+    create: false
+    existingClaim: backup-storage
+    accessMode: ReadWriteMany
+    size: 500Gi
+    storageClassName: nfs20t
+
 ## loki subchart values override - this cluster's CoreDNS Service is not named
 ## "kube-dns" (RKE2's default is "rke2-coredns-rke2-coredns"), but the loki
 ## chart's nginx gateway hardcodes an nginx resolver built from
@@ -509,7 +552,7 @@ grafana:
         - /bin/sh
         - -c
       args:
-        - grafana-cli --pluginUrl https://github.com/sasaki77/archiverappliance-datasource/releases/latest/download/archiverappliance-datasource.zip
+        - /usr/share/grafana/bin/grafana-cli --pluginUrl https://github.com/sasaki77/archiverappliance-datasource/releases/latest/download/archiverappliance-datasource.zip
           plugins install sasaki77-archiverappliance-datasource;
       volumeMounts:
         - name: grafana-plugins

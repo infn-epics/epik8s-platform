@@ -1,0 +1,39 @@
+## Domain overlay: core platform objects only.
+## Use together with values-k8sda.yaml.
+
+platformBootstrap:
+  argocd:
+    enabled: false
+
+networking:
+  enabled: true
+
+storage:
+  enabled: true
+
+sysctlTuning:
+  enabled: true
+
+clusterBackup:
+  enabled: true
+
+monitoring:
+  kubePrometheusStack:
+    enabled: false
+  grafana:
+    enabled: false
+
+backend:
+  enabled: false
+
+logging:
+  loki:
+    enabled: false
+  alloy:
+    enabled: false
+
+langfuse:
+  enabled: false
+
+aiPlatform:
+  enabled: false
