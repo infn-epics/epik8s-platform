@@ -611,17 +611,29 @@ aiPlatform:
           limits: { cpu: "1", memory: 512Mi }
     kubernetesMcp:
       enabled: true
-      image: python:3.11-slim
-      replicas: 2
-      minReplicas: 2
-      maxReplicas: 10
-      noProxy: "localhost,127.0.0.1,.svc,.cluster.local,10.0.0.0/8,192.168.0.0/16"
-      resources:
-        requests: { cpu: 250m, memory: 256Mi }
-        limits: { cpu: "2", memory: 1Gi }
-      ingress:
-        enabled: false
-        host: ""
+      ## The retired FastMCP/Python implementation can be restored only for
+      ## rollback while migrating. Do not enable it alongside these profiles.
+      legacyEnabled: false
+      image: quay.io/containers/kubernetes_mcp_server:v0.0.62
+      observer:
+        replicas: 2
+        resources:
+          requests: { cpu: 250m, memory: 256Mi }
+          limits: { cpu: "2", memory: 1Gi }
+        ingress:
+          enabled: false
+          host: ""
+      operator:
+        ## Not registered in LibreChat by the chart. Register it as a
+        ## LibreChat ACL-controlled MCP server only for trusted operators.
+        enabled: true
+        replicas: 1
+        ## RBAC is deliberately namespace-scoped. Add a namespace only after
+        ## approving that its pods may be inspected and entered with exec.
+        namespaces: [ai-platform]
+        resources:
+          requests: { cpu: 250m, memory: 256Mi }
+          limits: { cpu: "1", memory: 512Mi }
     ragMcp:
       enabled: true
       image: python:3.11-slim
@@ -707,13 +719,13 @@ aiPlatform:
     ## carries forward what openwebui's TOOL_SERVER_CONNECTIONS registered,
     ## so replacing the frontend doesn't drop existing capability.
     mcpServers:
-      kubernetes-mcp:
+      kubernetes-observer:
         enabled: true
         type: streamable-http
-        url: "http://kubernetes-mcp.ai-platform.svc.cluster.local:8080/mcp"
+        url: "http://kubernetes-mcp-observer.ai-platform.svc.cluster.local:8080/mcp"
         chatMenu: true
         title: "Kubernetes Observability"
-        description: "Cluster health, pod issues, node pressure, namespace usage."
+        description: "Read-only cluster inspection, events, resource state, and pod logs."
       rag-mcp:
         enabled: true
         type: streamable-http

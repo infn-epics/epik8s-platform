@@ -1,0 +1,311 @@
+{{- /*
+Two Kubernetes MCP profiles, backed by containers/kubernetes-mcp-server.
+
+The observer is cluster-wide but read-only, exposes a deliberately small tool
+allowlist, and never receives Secret/ConfigMap/RBAC permissions. The operator
+is separate and namespace-scoped; it can inspect pods, read logs, and run
+commands only in namespaces explicitly listed in values.
+*/ -}}
+{{- if and .Values.aiPlatform.enabled .Values.aiPlatform.mcp.enabled .Values.aiPlatform.mcp.kubernetesMcp.enabled }}
+{{- $ns := .Values.aiPlatform.namespace }}
+{{- $v := .Values.aiPlatform.mcp.kubernetesMcp }}
+{{- $observer := $v.observer }}
+{{- $operator := $v.operator }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernetes-mcp-observer
+  namespace: {{ $ns }}
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubernetes-mcp-observer
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services", "endpoints", "nodes", "namespaces", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "daemonsets", "statefulsets", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernetes-mcp-observer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernetes-mcp-observer
+subjects:
+  - kind: ServiceAccount
+    name: kubernetes-mcp-observer
+    namespace: {{ $ns }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubernetes-mcp-observer-config
+  namespace: {{ $ns }}
+data:
+  config.toml: |
+    port = "8080"
+    stateless = true
+    read_only = true
+    toolsets = ["core"]
+    enabled_tools = [
+      "events_list", "namespaces_list", "nodes_top", "pods_get",
+      "pods_list", "pods_list_in_namespace", "pods_log", "pods_top",
+      "resources_get", "resources_list"
+    ]
+
+    [[denied_resources]]
+    group = ""
+    version = "v1"
+    kind = "Secret"
+
+    [[denied_resources]]
+    group = ""
+    version = "v1"
+    kind = "ConfigMap"
+
+    [[denied_resources]]
+    group = "rbac.authorization.k8s.io"
+    version = "v1"
+    kind = "Role"
+
+    [[denied_resources]]
+    group = "rbac.authorization.k8s.io"
+    version = "v1"
+    kind = "RoleBinding"
+
+    [[denied_resources]]
+    group = "rbac.authorization.k8s.io"
+    version = "v1"
+    kind = "ClusterRole"
+
+    [[denied_resources]]
+    group = "rbac.authorization.k8s.io"
+    version = "v1"
+    kind = "ClusterRoleBinding"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernetes-mcp-observer
+  namespace: {{ $ns }}
+  labels:
+    app: kubernetes-mcp-observer
+spec:
+  replicas: {{ $observer.replicas }}
+  selector:
+    matchLabels:
+      app: kubernetes-mcp-observer
+  template:
+    metadata:
+      labels:
+        app: kubernetes-mcp-observer
+    spec:
+      serviceAccountName: kubernetes-mcp-observer
+      containers:
+        - name: server
+          image: {{ $v.image }}
+          args: ["--config", "/etc/kubernetes-mcp-server/config.toml"]
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+          resources:
+            {{- toYaml $observer.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          volumeMounts:
+            - name: config
+              mountPath: /etc/kubernetes-mcp-server
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: kubernetes-mcp-observer-config
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubernetes-mcp-observer
+  namespace: {{ $ns }}
+spec:
+  type: ClusterIP
+  selector:
+    app: kubernetes-mcp-observer
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+{{- if $observer.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kubernetes-mcp-observer
+  namespace: {{ $ns }}
+spec:
+  ingressClassName: {{ $.Values.aiPlatform.ingress.className }}
+  rules:
+    - host: {{ $observer.ingress.host }}
+      http:
+        paths:
+          - path: /mcp
+            pathType: Prefix
+            backend:
+              service:
+                name: kubernetes-mcp-observer
+                port:
+                  number: 8080
+{{- end }}
+{{- if $operator.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernetes-mcp-operator
+  namespace: {{ $ns }}
+automountServiceAccountToken: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubernetes-mcp-operator-config
+  namespace: {{ $ns }}
+data:
+  config.toml: |
+    port = "8080"
+    stateless = true
+    toolsets = ["core"]
+    enabled_tools = ["events_list", "pods_get", "pods_list_in_namespace", "pods_log", "pods_exec"]
+    confirmation_fallback = "deny"
+
+    [[confirmation_rules]]
+    tool = "pods_exec"
+    message = "Running a command in a workload requires explicit confirmation."
+
+    [[denied_resources]]
+    group = ""
+    version = "v1"
+    kind = "Secret"
+
+    [[denied_resources]]
+    group = ""
+    version = "v1"
+    kind = "ConfigMap"
+{{- range $targetNamespace := $operator.namespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kubernetes-mcp-operator
+  namespace: {{ $targetNamespace }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kubernetes-mcp-operator
+  namespace: {{ $targetNamespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kubernetes-mcp-operator
+subjects:
+  - kind: ServiceAccount
+    name: kubernetes-mcp-operator
+    namespace: {{ $ns }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernetes-mcp-operator
+  namespace: {{ $ns }}
+  labels:
+    app: kubernetes-mcp-operator
+spec:
+  replicas: {{ $operator.replicas }}
+  selector:
+    matchLabels:
+      app: kubernetes-mcp-operator
+  template:
+    metadata:
+      labels:
+        app: kubernetes-mcp-operator
+    spec:
+      serviceAccountName: kubernetes-mcp-operator
+      containers:
+        - name: server
+          image: {{ $v.image }}
+          args: ["--config", "/etc/kubernetes-mcp-server/config.toml"]
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+          resources:
+            {{- toYaml $operator.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          volumeMounts:
+            - name: config
+              mountPath: /etc/kubernetes-mcp-server
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: kubernetes-mcp-operator-config
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubernetes-mcp-operator
+  namespace: {{ $ns }}
+spec:
+  type: ClusterIP
+  selector:
+    app: kubernetes-mcp-operator
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+{{- end }}
+{{- end }}

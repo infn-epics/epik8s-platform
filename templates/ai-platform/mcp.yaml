@@ -87,7 +87,12 @@ spec:
 {{- end }}
 {{- end }}
 
-{{- if $mcp.kubernetesMcp.enabled }}
+{{- /*
+The historical in-chart Python Kubernetes MCP is deliberately retained behind
+an explicit legacy flag only.  The supported implementation is rendered by
+kubernetes-mcp-profiles.yaml, which separates observer and operator identities.
+*/ -}}
+{{- if $mcp.kubernetesMcp.legacyEnabled }}
 {{- $v := $mcp.kubernetesMcp }}
 ---
 apiVersion: v1

@@ -168,11 +168,28 @@ entry, don't assume the name above. This is a manually-maintained list, not
 automatic discovery - by design, matching the scope of this change.
 
 Also carries forward what `openwebui`'s `TOOL_SERVER_CONNECTIONS` already
-registered (`kubernetes-mcp`, `rag-mcp`) as `aiPlatform.librechat.mcpServers`
+registered (`kubernetes-observer`, `rag-mcp`) as `aiPlatform.librechat.mcpServers`
 entries, and points `llm.endpoints` at the already-deployed `litellm` gateway
-rather than duplicating a direct-to-vllm endpoint (`argus-helm-chart`'s own
+  rather than duplicating a direct-to-vllm endpoint (`argus-helm-chart`'s own
 `vllmService` "facility-wide singleton" stays disabled, since this chart
-already has that singleton as `aiPlatform.vllm`).
+  already has that singleton as `aiPlatform.vllm`).
+
+### Kubernetes MCP profiles
+
+`containers/kubernetes-mcp-server` is deployed as two deliberately separate
+identities. `kubernetes-mcp-observer` is the only profile registered in the
+chart-managed LibreChat configuration: it can inspect cluster resources,
+events, metrics, and pod logs, but runs in MCP read-only mode and its RBAC
+cannot read Secrets or ConfigMaps. `kubernetes-mcp-operator` is not registered
+in LibreChat and has no Ingress. It is namespace-scoped (initially
+`ai-platform`) and only permits pod inspection, logs, and `pods/exec`.
+
+Do not add the operator as a global YAML-defined LibreChat MCP entry. To make
+it available to named users or groups, add it in LibreChat as an admin-managed
+MCP server and grant its resource ACL only to the approved users/groups/roles.
+For a security boundary stronger than LibreChat visibility, configure the MCP
+server's OIDC/OAuth support and map each authenticated identity to Kubernetes
+RBAC; a shared ServiceAccount cannot distinguish individual LibreChat users.
 
 ## Voice Assistant (experimental, Jarvis-like)
 
@@ -201,7 +218,7 @@ components, one Helm template each, same convention as everything else in
   - **STT**: `aiPlatform.argusStt` (already deployed, see above)
   - **LLM**: the `litellm` gateway (already deployed, see above)
   - **TTS**: `aiPlatform.argusTts` (already deployed, see above)
-  - **Tools**: `kubernetes-mcp` + `rag-mcp` via `livekit-agents`' native
+  - **Tools**: `kubernetes-observer` + `rag-mcp` via `livekit-agents`' native
     MCP integration (their entire tool surface, since both are read-only
     by construction - see their own RBAC/Qdrant-client code), plus one
     `ArgusMcpBridge` selected by the current LiveKit room's exact

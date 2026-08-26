@@ -165,8 +165,9 @@ aiPlatform:
     enabled: false
   mcp:
     kubernetesMcp:
-      ingress:
-        enabled: false
+      observer:
+        ingress:
+          enabled: false
   confluenceIngester:
     ## disabled by default - needs a real Confluence instance/credentials.
     enabled: false

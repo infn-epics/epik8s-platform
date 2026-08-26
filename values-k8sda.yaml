@@ -835,9 +835,10 @@ aiPlatform:
         enabled: false
     kubernetesMcp:
       enabled: true
-      ingress:
-        enabled: true
-        host: k8sda-mcp.k8sda.lnf.infn.it
+      observer:
+        ingress:
+          enabled: true
+          host: k8sda-mcp.k8sda.lnf.infn.it
     ragMcp:
       enabled: true
       baseUrl: "https://ragflow-api-lnf.131.154.99.90.myip.cloud.infn.it"

@@ -16,14 +16,14 @@ silently disappears from the rendered librechat.yaml.
 */ -}}
 {{- $mcpServers := deepCopy $lc.mcpServers }}
 {{- /*
-The kubernetes-mcp and rag-mcp entries point at workloads owned by this chart.
+The kubernetes-observer and rag-mcp entries point at workloads owned by this chart.
 Do not advertise either server to LibreChat when its workload is disabled: an
 enabled registration with no matching Service makes LibreChat retry a dead DNS
 name and eventually open its MCP circuit breaker. Externally managed entries
 (for example loki-mcp) deliberately remain controlled only by mcpServers.*.
 */ -}}
 {{- if not .Values.aiPlatform.mcp.kubernetesMcp.enabled }}
-{{- $_ := unset $mcpServers "kubernetes-mcp" }}
+{{- $_ := unset $mcpServers "kubernetes-observer" }}
 {{- end }}
 {{- if not .Values.aiPlatform.mcp.ragMcp.enabled }}
 {{- $_ := unset $mcpServers "rag-mcp" }}
