@@ -80,6 +80,11 @@ from room_scope import RoomScopeError, select_server_for_room
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("voice-agent")
 
+# Keep phase-publish tasks alive until completion and surface failures. Phase
+# events drive the dashboard state machine; silently losing one can otherwise
+# leave the operator looking at a stale STT/LLM/TTS status.
+_phase_publish_tasks: set[asyncio.Task] = set()
+
 STT_BASE_URL = os.environ["STT_BASE_URL"]
 STT_MODEL = os.environ.get("STT_MODEL", "Systran/faster-whisper-base")
 # openai.STT defaults to language="en", detect_language=False - confirmed
@@ -245,8 +250,31 @@ def _emit_phase(turn_id: str, phase: str, edge: str) -> None:
     breaking the actual voice turn over."""
     ctx = get_job_context(required=False)
     if ctx is None:
+        logger.warning(
+            "cannot publish %s:%s phase for turn %s: no job context",
+            phase,
+            edge,
+            turn_id,
+        )
         return
-    asyncio.create_task(send_phase(ctx.room, turn_id, phase, edge))
+    task = asyncio.create_task(send_phase(ctx.room, turn_id, phase, edge))
+    _phase_publish_tasks.add(task)
+
+    def _completed(completed: asyncio.Task) -> None:
+        _phase_publish_tasks.discard(completed)
+        if completed.cancelled():
+            return
+        exc = completed.exception()
+        if exc is not None:
+            logger.error(
+                "failed to publish %s:%s phase for turn %s",
+                phase,
+                edge,
+                turn_id,
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+
+    task.add_done_callback(_completed)
 
 
 def _extract_metrics(item) -> dict[str, float] | None:
