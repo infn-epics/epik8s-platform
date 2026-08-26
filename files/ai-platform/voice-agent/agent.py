@@ -175,7 +175,7 @@ _MARKDOWN_NOISE_LINE = re.compile(r"^\s*([-=*#_~]{2,}|[-*•]\s*)\s*$")
 # Confirmed live 2026-08-05: minimax-m27 (via the AI Gateway) occasionally
 # emits a tool call as literal response CONTENT instead of a proper OpenAI
 # `tool_calls` delta - e.g. "<minimax:tool_call>\n<invoke
-# name=\"sparc-argus__list_iocs\">\n</invoke>\n</minimax:tool_call>" shows up
+# name=\"list_iocs\">\n</invoke>\n</minimax:tool_call>" shows up
 # as text the operator can see/hear. Isolated single- and multi-turn replays
 # against the gateway (same system prompt, same full tool list) came back
 # with a correctly-structured tool_calls field every time, so this is
@@ -188,13 +188,19 @@ _MARKDOWN_NOISE_LINE = re.compile(r"^\s*([-=*#_~]{2,}|[-*•]\s*)\s*$")
 _TOOL_CALL_LEAK_OPEN = "<minimax:tool_call>"
 _TOOL_CALL_LEAK_CLOSE = "</minimax:tool_call>"
 _TOOL_CALL_LEAK_MAX_BUFFER = 4000  # give up and flush verbatim past this - never eat a whole reply
+_EMPTY_TOOL_FALLBACK = "Non sono riuscito a completare la consultazione. Puoi ripetere la richiesta?"
 
 
 async def _strip_leaked_tool_call_syntax(chunks: AsyncIterable[llm.ChatChunk]) -> AsyncIterable[llm.ChatChunk]:
     buf = ""
     in_leak = False
+    stripped_leak = False
+    emitted_content = False
+    saw_structured_tool_call = False
     async for chunk in chunks:
         content = chunk.delta.content if chunk.delta else None
+        if chunk.delta and getattr(chunk.delta, "tool_calls", None):
+            saw_structured_tool_call = True
         if not content:
             yield chunk
             continue
@@ -217,6 +223,7 @@ async def _strip_leaked_tool_call_syntax(chunks: AsyncIterable[llm.ChatChunk]) -
                     out += buf[:idx]
                 buf = buf[idx:]
                 in_leak = True
+                stripped_leak = True
                 logger.warning("stripping a leaked <minimax:tool_call> block from LLM output")
             idx = buf.find(_TOOL_CALL_LEAK_CLOSE)
             if idx == -1:
@@ -228,6 +235,8 @@ async def _strip_leaked_tool_call_syntax(chunks: AsyncIterable[llm.ChatChunk]) -
             buf = buf[idx + len(_TOOL_CALL_LEAK_CLOSE):]
             in_leak = False
 
+        if out:
+            emitted_content = True
         chunk.delta.content = out or None
         yield chunk
 
@@ -239,7 +248,20 @@ async def _strip_leaked_tool_call_syntax(chunks: AsyncIterable[llm.ChatChunk]) -
     # (in_leak=True at end-of-stream means a genuinely unclosed tag -
     # safe/correct to drop, not flush, matching the filter's whole point).
     if buf and not in_leak:
+        emitted_content = True
         yield llm.ChatChunk(id="tool-call-leak-filter-flush", delta=llm.ChoiceDelta(role="assistant", content=buf))
+    elif stripped_leak and not emitted_content and not saw_structured_tool_call:
+        # MiniMax occasionally emits its entire final answer as literal tool
+        # protocol markup. Removing that markup is necessary, but an empty
+        # stream gives TTS no frames and the operator hears nothing. Produce a
+        # short, honest recovery prompt only for this malformed-output case;
+        # a normal structured tool-call-only stream must remain empty so the
+        # SDK can execute the tool and continue the turn.
+        logger.warning("malformed tool-call output left no speakable response; using fallback")
+        yield llm.ChatChunk(
+            id="empty-tool-call-fallback",
+            delta=llm.ChoiceDelta(role="assistant", content=_EMPTY_TOOL_FALLBACK),
+        )
 
 
 def _emit_phase(turn_id: str, phase: str, edge: str) -> None:
@@ -407,7 +429,8 @@ async def entrypoint(ctx: JobContext) -> None:
     bridge = ArgusMcpBridge(ctx.room, cfg)
     await bridge.connect()
     bridges.append(bridge)
-    argus_tools.extend(await bridge.discover_tools())
+    central_tool_names = frozenset({"search_documentation"}) if RAG_MCP_URL else frozenset()
+    argus_tools.extend(await bridge.discover_tools(excluded_names=central_tool_names))
 
     async def _cleanup() -> None:
         for bridge in bridges:

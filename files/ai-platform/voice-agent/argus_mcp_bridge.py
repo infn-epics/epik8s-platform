@@ -68,7 +68,7 @@ HIGHLIGHT_ARG_BY_TOOL = {
 
 @dataclass
 class ArgusMcpServerConfig:
-    name: str  # short id, e.g. "btf-argus" - used to namespace tool names
+    name: str  # short id, e.g. "btf-argus" - used for logging and descriptions
     url: str   # e.g. http://argus-argus-helm-chart-argus-mcp.<ns>.svc.cluster.local:8000/sse
     title: str = ""
 
@@ -102,12 +102,13 @@ class ArgusMcpBridge:
         if self._streams_cm is not None:
             await self._streams_cm.__aexit__(None, None, None)
 
-    async def discover_tools(self) -> list[FunctionTool]:
+    async def discover_tools(self, excluded_names: frozenset[str] = frozenset()) -> list[FunctionTool]:
         """List the server's tools and return only the allowlisted ones,
         wrapped as callable FunctionTools. Logs (does not raise on) every
         tool it skips, so a deploy that adds a new server-side tool is
         visible in the agent's logs rather than silently either exposed or
-        silently missing."""
+        silently missing. ``excluded_names`` prevents collisions with tools
+        supplied by the session's central MCP servers."""
         assert self._session is not None, "call connect() first"
         listing = await self._session.list_tools()
         tools: list[FunctionTool] = []
@@ -118,14 +119,25 @@ class ArgusMcpBridge:
                     self._server.name, tool.name,
                 )
                 continue
+            if tool.name in excluded_names:
+                logger.info(
+                    "argus-mcp %s: central MCP provides tool %r; skipping duplicate",
+                    self._server.name,
+                    tool.name,
+                )
+                continue
             tools.append(self._wrap_tool(tool.name, tool.description or "", tool.inputSchema or {"type": "object", "properties": {}}))
         logger.info("argus-mcp %s: exposing %d/%d tools", self._server.name, len(tools), len(listing.tools))
         return tools
 
     def _wrap_tool(self, name: str, description: str, input_schema: dict[str, Any]) -> FunctionTool:
-        # Namespaced so the LLM can distinguish beamlines when multiple
-        # argus-mcp servers are configured (e.g. sparc vs euaps vs btf).
-        qualified_name = f"{self._server.name}__{name}"
+        # entrypoint() selects exactly one Argus MCP server for the current
+        # LiveKit room before this bridge is created. Keep the server's native
+        # tool name: model providers are substantially more reliable with
+        # familiar names such as ``list_iocs`` than with a synthetic
+        # ``btf-argus__list_iocs`` prefix. There is no cross-beamline collision
+        # because tools from other beamlines never enter this AgentSession.
+        exposed_name = name
         qualified_description = f"[{self._server.title or self._server.name}] {description}"
 
         async def _call(raw_arguments: dict[str, Any]) -> str:
@@ -146,7 +158,7 @@ class ArgusMcpBridge:
                 except Exception:
                     # A highlight is a UI nicety - never let it break the
                     # actual tool call/response the LLM is waiting on.
-                    logger.exception("failed to publish highlight event for %s", qualified_name)
+                    logger.exception("failed to publish highlight event for %s", exposed_name)
 
             try:
                 # device_name/catalog are no-ops for every tool except
@@ -160,7 +172,7 @@ class ArgusMcpBridge:
                 # Same rationale as the highlight try/except above: rich
                 # content (tables/charts/widgets) is a UI enrichment, never
                 # allowed to break the actual tool response.
-                logger.exception("failed to emit content event for %s", qualified_name)
+                logger.exception("failed to emit content event for %s", exposed_name)
 
             return text or "(empty result)"
 
@@ -178,7 +190,7 @@ class ArgusMcpBridge:
         # raw_schema dict itself, per RawFunctionDescription.
         return function_tool(
             raw_schema={
-                "name": qualified_name,
+                "name": exposed_name,
                 "description": qualified_description,
                 "parameters": input_schema,
             },
