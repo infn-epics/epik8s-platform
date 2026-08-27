@@ -69,7 +69,7 @@ from typing import AsyncIterable
 
 import httpx
 import openai as openai_sdk
-from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli, get_job_context, llm, mcp, stt
+from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli, get_job_context, llm, stt
 from livekit.plugins import openai, silero
 from livekit.plugins.openai.tts import AUDIO_STREAM_MODELS as _OPENAI_AUDIO_STREAM_MODELS
 
@@ -411,11 +411,15 @@ async def _send_transcript_safely(room, role: str, text: str, metrics: dict[str,
 async def entrypoint(ctx: JobContext) -> None:
     await ctx.connect()
 
-    native_mcp_servers = []
-    if KUBERNETES_MCP_URL:
-        native_mcp_servers.append(mcp.MCPServerHTTP(url=KUBERNETES_MCP_URL))
-    if RAG_MCP_URL:
-        native_mcp_servers.append(mcp.MCPServerHTTP(url=RAG_MCP_URL))
+    # Native streamable-HTTP MCP toolsets initialize asynchronously inside
+    # AgentSession. A stalled optional service used to leave the entire voice
+    # session unusable before STT started, with no reply to the operator.
+    # Keep the critical voice path limited to the scoped Argus bridge; its
+    # allowlist already includes documentation and control-room read tools.
+    # Central MCP integration can return later only with explicit startup
+    # timeouts/failure isolation.
+    if KUBERNETES_MCP_URL or RAG_MCP_URL:
+        logger.warning("central native MCP toolsets disabled for reliable voice-session startup")
 
     bridges: list[ArgusMcpBridge] = []
     argus_tools = []
@@ -429,8 +433,7 @@ async def entrypoint(ctx: JobContext) -> None:
     bridge = ArgusMcpBridge(ctx.room, cfg)
     await bridge.connect()
     bridges.append(bridge)
-    central_tool_names = frozenset({"search_documentation"}) if RAG_MCP_URL else frozenset()
-    argus_tools.extend(await bridge.discover_tools(excluded_names=central_tool_names))
+    argus_tools.extend(await bridge.discover_tools())
 
     async def _cleanup() -> None:
         for bridge in bridges:
@@ -444,7 +447,7 @@ async def entrypoint(ctx: JobContext) -> None:
         + f"\nQuesta sessione riguarda esclusivamente {beamline_title}. "
         + "Non rispondere con dati di altre beamline.\n"
     )
-    agent = ArgusAgent(instructions=scoped_prompt, tools=argus_tools, mcp_servers=native_mcp_servers)
+    agent = ArgusAgent(instructions=scoped_prompt, tools=argus_tools)
 
     llm_http_client = httpx.AsyncClient(proxy=LLM_HTTP_PROXY) if LLM_HTTP_PROXY else None
     llm_client = openai_sdk.AsyncClient(base_url=LLM_BASE_URL, api_key=LLM_API_KEY, http_client=llm_http_client)
