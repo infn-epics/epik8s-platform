@@ -116,7 +116,10 @@ spec:
             {{- end }}
             {{- if $mcp.kubernetesMcp.enabled }}
             - name: KUBERNETES_MCP_URL
-              value: "http://kubernetes-mcp-observer.{{ $ns }}.svc.cluster.local:8080/mcp"
+              # kubernetes-mcp-profiles.yaml exposes the read-only profile
+              # through the stable kubernetes-mcp Service (not the old
+              # kubernetes-mcp-observer name).
+              value: "http://kubernetes-mcp.{{ $ns }}.svc.cluster.local:8080/mcp"
             {{- end }}
             {{- if $mcp.ragMcp.enabled }}
             - name: RAG_MCP_URL
