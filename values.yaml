@@ -699,9 +699,11 @@ aiPlatform:
       enabled: false
       list: []
     ## Voice input/output, backed by the self-hosted aiPlatform.argusStt/
-    ## argusTts services above - literal in-cluster URLs, same convention as
-    ## llmEndpoints/mcpServers below (no cross-referencing sibling component
-    ## blocks). model/voices confirmed live against the deployed
+    ## argusTts services above. LibreChat's `openai.url` is the complete
+    ## request URL (it does not append an OpenAI path), so include the
+    ## endpoint suffix rather than only the service's /v1 base URL. This is
+    ## deliberately the same shared backend used by the LiveKit voice agent.
+    ## model/voices confirmed live against the deployed
     ## argus-stt/argus-tts's own /v1/registry and a real round-trip
     ## transcription+synthesis test, not guessed - only two Italian voices
     ## exist in speaches' catalog: this (male, lower "x_low" quality tier)
@@ -710,10 +712,10 @@ aiPlatform:
     speech:
       enabled: true
       stt:
-        url: "http://argus-stt.ai-platform.svc.cluster.local:8000/v1"
+        url: "http://argus-stt.ai-platform.svc.cluster.local:8000/v1/audio/transcriptions"
         model: "Systran/faster-whisper-base" # must match aiPlatform.argusStt.sttModel
       tts:
-        url: "http://argus-tts.ai-platform.svc.cluster.local:8000/v1"
+        url: "http://argus-tts.ai-platform.svc.cluster.local:8000/v1/audio/speech"
         model: "speaches-ai/piper-it_IT-riccardo-x_low"
         voices: ["it_IT-riccardo-x_low"]
     ## carries forward what openwebui's TOOL_SERVER_CONNECTIONS registered,

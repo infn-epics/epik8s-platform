@@ -911,6 +911,11 @@ aiPlatform:
         - "LiteLLM Gateway"
         - "AI-Gateway-WP6"
         - "AI-Gateway-90"
+    ## Keep LibreChat's microphone model selection aligned with the shared
+    ## argus-stt service above (also consumed by the dashboard voice agent).
+    speech:
+      stt:
+        model: "Systran/faster-whisper-large-v3"
     ## serviceName confirmed by rendering each beamline's computed argus values
     ## through argus-helm-chart directly (helm's naming convention for release
     ## name "argus" + chart name "argus-helm-chart", not simply "argus-mcp").
