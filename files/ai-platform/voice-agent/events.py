@@ -30,6 +30,7 @@ EVENT_HIGHLIGHT = "highlight"
 EVENT_TRANSCRIPT = "transcript"
 EVENT_CONFIRM_REQUEST = "confirm_request"
 EVENT_CONFIRM_ACTION = "confirm_action"
+EVENT_TEXT_INPUT = "text_input"
 EVENT_PHASE = "phase"
 EVENT_CONTENT = "content"
 

@@ -74,7 +74,7 @@ from livekit.plugins import openai, silero
 from livekit.plugins.openai.tts import AUDIO_STREAM_MODELS as _OPENAI_AUDIO_STREAM_MODELS
 
 from argus_mcp_bridge import ArgusMcpBridge, ArgusMcpServerConfig
-from events import send_phase, send_transcript
+from events import EVENT_TEXT_INPUT, send_phase, send_transcript
 from room_scope import RoomScopeError, select_server_for_room
 
 logging.basicConfig(level=logging.INFO)
@@ -455,6 +455,44 @@ async def entrypoint(ctx: JobContext) -> None:
         tts=openai.TTS(base_url=TTS_BASE_URL, api_key="none", model=TTS_MODEL, voice=TTS_VOICE),
         vad=silero.VAD.load(),
     )
+
+    # Typed dashboard requests use the same room data channel as confirmation
+    # actions. They deliberately enter AgentSession through generate_reply(),
+    # rather than pretending to be an audio track, so the normal LLM/TTS and
+    # conversation_item_added transcript path is shared with spoken requests.
+    text_reply_tasks: set[asyncio.Task] = set()
+
+    async def _handle_text_input(text: str) -> None:
+        try:
+            # A typed turn has no STT END_OF_SPEECH event to establish a
+            # phase id. Give LLM and TTS one explicitly so their events stay
+            # correlated and never inherit an earlier spoken turn's id.
+            agent._current_turn_id = uuid.uuid4().hex
+            await session.generate_reply(user_input=text, input_modality="text")
+        except Exception:
+            logger.exception("failed to generate reply for typed ARGUS request")
+
+    @ctx.room.on("data_received")
+    def _on_data_received(data_packet) -> None:
+        try:
+            payload = json.loads(data_packet.data.decode("utf-8"))
+        except (AttributeError, UnicodeDecodeError, json.JSONDecodeError):
+            return
+
+        if payload.get("type") != EVENT_TEXT_INPUT:
+            return
+        raw_text = payload.get("text")
+        if not isinstance(raw_text, str):
+            return
+        text = raw_text.strip()
+        # Bound work and model context even if a participant bypasses the
+        # browser-side maxlength/type guard.
+        if not text or len(text) > 4000:
+            return
+
+        task = asyncio.create_task(_handle_text_input(text))
+        text_reply_tasks.add(task)
+        task.add_done_callback(text_reply_tasks.discard)
 
     @session.on("conversation_item_added")
     def _on_conversation_item(event) -> None:
