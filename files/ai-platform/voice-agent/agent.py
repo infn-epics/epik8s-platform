@@ -74,7 +74,7 @@ from livekit.plugins import openai, silero
 from livekit.plugins.openai.tts import AUDIO_STREAM_MODELS as _OPENAI_AUDIO_STREAM_MODELS
 
 from argus_mcp_bridge import ArgusMcpBridge, ArgusMcpServerConfig
-from events import EVENT_TEXT_INPUT, send_phase, send_transcript
+from events import EVENT_TEXT_INPUT, send_error, send_phase, send_transcript
 from room_scope import RoomScopeError, select_server_for_room
 
 logging.basicConfig(level=logging.INFO)
@@ -116,6 +116,10 @@ _OPENAI_AUDIO_STREAM_MODELS.add(TTS_MODEL)
 LLM_BASE_URL = os.environ["LLM_BASE_URL"]
 LLM_MODEL = os.environ.get("LLM_MODEL", "llama3-8b")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "none")
+LLM_ALLOWED_MODELS = frozenset(
+    model for model in json.loads(os.environ.get("LLM_ALLOWED_MODELS_JSON", "[]"))
+    if isinstance(model, str) and model
+)
 # Only the LLM call needs a proxy - it's the one endpoint that (for the
 # k8sda site) is an external HTTPS gateway rather than an in-cluster
 # Service. Deliberately NOT read from HTTP_PROXY/HTTPS_PROXY: those are
@@ -299,6 +303,17 @@ def _emit_phase(turn_id: str, phase: str, edge: str) -> None:
     task.add_done_callback(_completed)
 
 
+def _emit_voice_error(code: str, message: str) -> None:
+    """Publish a precise text error when server-side TTS cannot answer."""
+    ctx = get_job_context(required=False)
+    if ctx is None:
+        logger.warning("cannot publish voice error %s: no job context", code)
+        return
+    task = asyncio.create_task(send_error(ctx.room, code, message))
+    _phase_publish_tasks.add(task)
+    task.add_done_callback(_phase_publish_tasks.discard)
+
+
 def _extract_metrics(item) -> dict[str, float] | None:
     """Flatten a ChatMessage's MetricsReport (see this module's API SURFACE
     NOTE) into a {field_name_ms: milliseconds} dict for send_transcript,
@@ -348,16 +363,20 @@ class ArgusAgent(Agent):
         # END_OF_SPEECH, since stt_node runs once for the whole session,
         # not once per turn - llm_node/tts_node read it back via
         # self._current_turn_id.
-        async for event in Agent.default.stt_node(self, audio, model_settings):
-            if event.type == stt.SpeechEventType.END_OF_SPEECH:
-                turn_id = uuid.uuid4().hex
-                self._current_turn_id = turn_id
-                _emit_phase(turn_id, "stt", "start")
-            elif event.type == stt.SpeechEventType.FINAL_TRANSCRIPT:
-                turn_id = getattr(self, "_current_turn_id", None)
-                if turn_id:
-                    _emit_phase(turn_id, "stt", "end")
-            yield event
+        try:
+            async for event in Agent.default.stt_node(self, audio, model_settings):
+                if event.type == stt.SpeechEventType.END_OF_SPEECH:
+                    turn_id = uuid.uuid4().hex
+                    self._current_turn_id = turn_id
+                    _emit_phase(turn_id, "stt", "start")
+                elif event.type == stt.SpeechEventType.FINAL_TRANSCRIPT:
+                    turn_id = getattr(self, "_current_turn_id", None)
+                    if turn_id:
+                        _emit_phase(turn_id, "stt", "end")
+                yield event
+        except Exception:
+            logger.exception("speech transcription failed")
+            _emit_voice_error("stt_failed", "La trascrizione vocale di ARGUS non è disponibile. Riprova tra qualche secondo.")
 
     async def llm_node(self, chat_ctx, tools, model_settings):
         # Falls back to a fresh id if llm_node is ever invoked without a
@@ -373,6 +392,14 @@ class ArgusAgent(Agent):
             raw = Agent.default.llm_node(self, chat_ctx, tools, model_settings)
             async for chunk in _strip_leaked_tool_call_syntax(raw):
                 yield chunk
+        except Exception:
+            # The TTS pipeline remains healthy in this failure mode: emit a
+            # short spoken/textual answer through it instead of silence.
+            logger.exception("language model request failed")
+            yield llm.ChatChunk(
+                id="llm-failure-fallback",
+                delta=llm.ChoiceDelta(role="assistant", content="ARGUS non riesce a elaborare la richiesta in questo momento. Riprova tra qualche secondo."),
+            )
         finally:
             _emit_phase(turn_id, "llm", "end")
 
@@ -390,6 +417,9 @@ class ArgusAgent(Agent):
         try:
             async for frame in Agent.default.tts_node(self, _sanitized(), model_settings):
                 yield frame
+        except Exception:
+            logger.exception("speech synthesis failed")
+            _emit_voice_error("tts_failed", "La sintesi vocale di ARGUS non è disponibile. Il testo della risposta non può essere riprodotto ora.")
         finally:
             _emit_phase(turn_id, "tts", "end")
 
@@ -410,6 +440,16 @@ async def _send_transcript_safely(room, role: str, text: str, metrics: dict[str,
 
 async def entrypoint(ctx: JobContext) -> None:
     await ctx.connect()
+
+    requested_model = LLM_MODEL
+    try:
+        metadata = json.loads(getattr(ctx.job, "metadata", "") or "{}")
+        candidate = metadata.get("llm_model")
+        if isinstance(candidate, str) and candidate in LLM_ALLOWED_MODELS:
+            requested_model = candidate
+    except (AttributeError, json.JSONDecodeError):
+        logger.warning("invalid voice dispatch metadata; using default LLM model")
+    logger.info("starting voice session with LLM model %s", requested_model)
 
     # Native streamable-HTTP MCP toolsets initialize asynchronously inside
     # AgentSession. A stalled optional service used to leave the entire voice
@@ -454,7 +494,7 @@ async def entrypoint(ctx: JobContext) -> None:
 
     session = AgentSession(
         stt=openai.STT(base_url=STT_BASE_URL, api_key="none", model=STT_MODEL, language=STT_LANGUAGE),
-        llm=openai.LLM(model=LLM_MODEL, client=llm_client),
+        llm=openai.LLM(model=requested_model, client=llm_client),
         tts=openai.TTS(base_url=TTS_BASE_URL, api_key="none", model=TTS_MODEL, voice=TTS_VOICE),
         vad=silero.VAD.load(),
     )

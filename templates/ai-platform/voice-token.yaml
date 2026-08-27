@@ -72,6 +72,10 @@ spec:
               value: {{ $v.tokenTtlSeconds | quote }}
             - name: ALLOWED_ROOMS_JSON
               value: {{ $allowedRooms | uniq | toJson | quote }}
+            - name: LLM_ALLOWED_MODELS_JSON
+              value: {{ $.Values.aiPlatform.voiceAgent.llmAllowedModels | default (list $.Values.aiPlatform.voiceAgent.llmModel) | toJson | quote }}
+            - name: VOICE_DEFAULT_MODEL
+              value: {{ $.Values.aiPlatform.voiceAgent.llmModel | quote }}
             {{- if $.Values.aiPlatform.proxy.enabled }}
             - name: HTTP_PROXY
               value: {{ $.Values.aiPlatform.proxy.httpProxy }}

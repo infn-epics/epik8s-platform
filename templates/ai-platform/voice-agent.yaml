@@ -100,6 +100,8 @@ spec:
               value: {{ $v.llmBaseUrl | default (printf "http://litellm.%s.svc.cluster.local:4000/v1" $ns) | quote }}
             - name: LLM_MODEL
               value: {{ $v.llmModel | quote }}
+            - name: LLM_ALLOWED_MODELS_JSON
+              value: {{ $v.llmAllowedModels | default (list $v.llmModel) | toJson | quote }}
             {{- if $v.llmApiKeySecretName }}
             - name: LLM_API_KEY
               valueFrom:

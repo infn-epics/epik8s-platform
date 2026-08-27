@@ -551,6 +551,7 @@ aiPlatform:
     ## rather than requiring a dedicated in-cluster LLM deployment.
     llmBaseUrl: ""
     llmModel: "llama3-8b" ## must match an aiPlatform.litellm.configYaml model_name
+    llmAllowedModels: ["llama3-8b"]
     llmApiKey: "none" ## matches litellm's own model entry (api_key: none) - see values.yaml's litellm.configYaml
     ## Only set these two if llmBaseUrl needs credentials from an existing
     ## Secret (e.g. reusing aiPlatform.librechat's own gateway API key)

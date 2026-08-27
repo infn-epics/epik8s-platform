@@ -61,6 +61,8 @@ LIVEKIT_URL = os.environ["LIVEKIT_URL"]
 TOKEN_TTL_SECONDS = int(os.environ.get("TOKEN_TTL_SECONDS", "21600"))  # 6h
 PORT = int(os.environ.get("PORT", "8080"))
 ALLOWED_ROOMS = json.loads(os.environ.get("ALLOWED_ROOMS_JSON", "[]"))
+ALLOWED_MODELS = frozenset(json.loads(os.environ.get("LLM_ALLOWED_MODELS_JSON", "[]")))
+DEFAULT_MODEL = os.environ.get("VOICE_DEFAULT_MODEL", "")
 
 # Must match agent.py's WorkerOptions(agent_name=...) exactly - this is how
 # AgentDispatchService.CreateDispatch picks which registered worker pool to
@@ -68,20 +70,20 @@ ALLOWED_ROOMS = json.loads(os.environ.get("ALLOWED_ROOMS_JSON", "[]"))
 AGENT_NAME = "argus-voice-agent"
 
 
-async def _dispatch_agent(room: str) -> None:
+async def _dispatch_agent(room: str, model: str) -> None:
     async with lkapi.LiveKitAPI(url=LIVEKIT_URL, api_key=API_KEY, api_secret=API_SECRET) as client:
         await client.agent_dispatch.create_dispatch(
-            CreateAgentDispatchRequest(room=room, agent_name=AGENT_NAME)
+            CreateAgentDispatchRequest(room=room, agent_name=AGENT_NAME, metadata=json.dumps({"llm_model": model}))
         )
 
 
-def dispatch_agent(room: str) -> None:
+def dispatch_agent(room: str, model: str) -> None:
     # A dispatch failure (e.g. livekit-server momentarily unreachable)
     # shouldn't fail the /token response - the room join itself still works
     # and is still useful (e.g. reviewing past highlights); log loudly
     # instead so it's visible without breaking the client's connect flow.
     try:
-        asyncio.run(_dispatch_agent(room))
+        asyncio.run(_dispatch_agent(room, model))
     except Exception:
         logger.exception("failed to dispatch %s to room %r", AGENT_NAME, room)
 
@@ -146,6 +148,7 @@ class Handler(BaseHTTPRequestHandler):
 
         room = (body.get("room") or "").strip()
         identity = (body.get("identity") or "").strip() or f"operator-{uuid.uuid4().hex[:8]}"
+        model = (body.get("model") or DEFAULT_MODEL).strip()
         if not room:
             self._send_json(400, {"error": "missing_room"})
             return
@@ -154,8 +157,11 @@ class Handler(BaseHTTPRequestHandler):
         except RoomScopeError:
             self._send_json(403, {"error": "room_not_allowed"})
             return
+        if not model or model not in ALLOWED_MODELS:
+            self._send_json(400, {"error": "model_not_allowed"})
+            return
 
-        dispatch_agent(room)
+        dispatch_agent(room, model)
         self._send_json(200, {"token": mint_token(room, identity)})
 
 

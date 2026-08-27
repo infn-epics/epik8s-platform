@@ -31,6 +31,7 @@ EVENT_TRANSCRIPT = "transcript"
 EVENT_CONFIRM_REQUEST = "confirm_request"
 EVENT_CONFIRM_ACTION = "confirm_action"
 EVENT_TEXT_INPUT = "text_input"
+EVENT_ERROR = "voice_error"
 EVENT_PHASE = "phase"
 EVENT_CONTENT = "content"
 
@@ -89,6 +90,20 @@ async def send_transcript(
     if metrics:
         payload["metrics"] = metrics
     await _publish(room, payload)
+
+
+async def send_error(room: rtc.Room, code: str, message: str) -> None:
+    """Report an unrecoverable voice-path failure to the dashboard.
+
+    The browser renders this text immediately and uses its local speech
+    fallback only because the server TTS path is unavailable in this case.
+    """
+    await _publish(room, {
+        "type": EVENT_ERROR,
+        "code": code,
+        "message": message,
+        "ts": int(time.time() * 1000),
+    })
 
 
 async def send_phase(room: rtc.Room, turn_id: str, phase: str, edge: str) -> None:
