@@ -895,6 +895,16 @@ aiPlatform:
           default: ["minimax-m27","qwen36-27b-x2","qwen36-27b", "gemma-4-31b-it", "qwen35-122b-a10b-gptq-int4"]
           fetch: true
         modelDisplayLabel: "AI-Gateway-90"
+      ## Verified 2026-09-03 from inside the cluster: llama.cpp OpenAI API,
+      ## with Qwen 3.8 27B loaded on port 8081. The server does not require
+      ## authentication; reuse the existing EMPTY speech key placeholder.
+      - name: "Marconi C1002"
+        apiKeySecretKey: "STT_API_KEY"
+        baseURL: "http://marconicento002.lnf.infn.it:8081/v1"
+        models:
+          default: ["/home/rgargana/models/Qwen3.8-27B-Q4_K_M.gguf"]
+          fetch: true
+        modelDisplayLabel: "Marconi C1002 (Qwen 3.8 27B)"
     ## New conversations open on AI-Gateway-90 / minimax-m27 by default.
     modelSpecs:
       enabled: true
@@ -912,6 +922,7 @@ aiPlatform:
         - "LiteLLM Gateway"
         - "AI-Gateway-WP6"
         - "AI-Gateway-90"
+        - "Marconi C1002"
     ## Keep LibreChat's microphone model selection aligned with the shared
     ## argus-stt service above (also consumed by the dashboard voice agent).
     speech:
