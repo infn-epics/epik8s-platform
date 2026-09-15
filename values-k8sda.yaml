@@ -874,7 +874,12 @@ aiPlatform:
         usePKCE: true
         buttonLabel: "Accedi con INFN"
         autoRedirect: true
-        requiredRole: ""
+        requiredRole: "librechat-user"
+        requiredRoleTokenKind: "access"
+        requiredRoleParameterPath: "realm_access.roles"
+        adminRole: "librechat-admin"
+        adminRoleTokenKind: "access"
+        adminRoleParameterPath: "realm_access.roles"
     ingress:
       enabled: true
       hosts:
