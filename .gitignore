@@ -3,3 +3,4 @@ charts/*.tgz
 # Never-commit scratch secrets scripts (real API keys/tokens applied via
 # kubectl, not meant to be tracked - see README.md "Secrets handling").
 secrets-*/
+.idea

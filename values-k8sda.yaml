@@ -859,6 +859,22 @@ aiPlatform:
     ## matches argusDefaults.charturl in epik8s-chart's own values.yaml - the
     ## same repo every beamline's argus service already points at.
     repoURL: https://github.com/infn-epics/argus-helm-chart.git
+    ## Public URL used by LibreChat to build OIDC authorization and callback
+    ## URLs. The OPENID_CLIENT_SECRET remains out of band in the
+    ## argus-librechat-credentials Secret; never add it to this file.
+    publicUrl: "https://argus.k8sda.lnf.infn.it"
+    auth:
+      mode: oauth2
+      oauth2:
+        issuer: "https://idp-test.app.infn.it/auth/realms/aai"
+        clientId: "argus-librechat"
+        clientSecretKey: "OPENID_CLIENT_SECRET"
+        callbackURL: "/oauth/openid/callback"
+        scope: "openid profile email"
+        usePKCE: true
+        buttonLabel: "Accedi con INFN"
+        autoRedirect: true
+        requiredRole: ""
     ingress:
       enabled: true
       hosts:
