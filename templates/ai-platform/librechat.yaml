@@ -56,14 +56,41 @@ LibreChat's own outbound calls (e.g. to external AI-Gateway LLM endpoints) need
 the corporate proxy, same as BTF's own argus release already sets via
 librechat.librechat.configEnv - without it, requests to external baseURLs just
 hang (no route without squid), not error out. See README.md.
+
+DOMAIN_CLIENT/DOMAIN_SERVER aren't set by argus-helm-chart or the upstream
+librechat subchart at all (neither references them - checked the vendored
+chart) - LibreChat falls back to its own http://localhost:3080 default,
+which is also what it uses to build the OIDC redirect_uri it sends to the
+IdP. That mismatches $lc.publicUrl's real host and breaks auth.mode: oauth2
+(IdP rejects a redirect_uri it doesn't recognize) even with a correct
+client secret, so set both from publicUrl whenever it's non-empty.
 */ -}}
 {{- $librechatSub := dict "enabled" true "ingress" $lc.ingress }}
+{{- $configEnv := dict }}
 {{- if $.Values.aiPlatform.proxy.enabled }}
-{{- $_ := set $librechatSub "librechat" (dict "configEnv" (dict
-      "HTTP_PROXY" $.Values.aiPlatform.proxy.httpProxy
-      "HTTPS_PROXY" $.Values.aiPlatform.proxy.httpsProxy
-      "NO_PROXY" $.Values.aiPlatform.proxy.noProxy
-    )) }}
+{{- $_ := set $configEnv "HTTP_PROXY" $.Values.aiPlatform.proxy.httpProxy }}
+{{- $_ := set $configEnv "HTTPS_PROXY" $.Values.aiPlatform.proxy.httpsProxy }}
+{{- $_ := set $configEnv "NO_PROXY" $.Values.aiPlatform.proxy.noProxy }}
+{{- end }}
+{{- if $lc.publicUrl }}
+{{- $_ := set $configEnv "DOMAIN_CLIENT" $lc.publicUrl }}
+{{- $_ := set $configEnv "DOMAIN_SERVER" $lc.publicUrl }}
+{{- end }}
+{{- if $configEnv }}
+{{- $_ := set $librechatSub "librechat" (dict "configEnv" $configEnv) }}
+{{- end }}
+{{- /*
+Default: let argus-helm-chart generate+own its own credentials Secret. When
+$lc.existingSecret is set (needed for auth.mode: oauth2 - see values.yaml's
+comment on aiPlatform.librechat.existingSecret), tell it to skip that and
+consume an already-existing Secret instead, populated out-of-band.
+*/ -}}
+{{- $secrets := dict "data" (dict) }}
+{{- if $lc.existingSecret }}
+{{- $_ := set $secrets "create" false }}
+{{- $_ := set $secrets "existingSecret" $lc.existingSecret }}
+{{- else }}
+{{- $_ := set $secrets "create" true }}
 {{- end }}
 {{- $argusHelmValues := dict
       "librechat" $librechatSub
@@ -72,7 +99,7 @@ hang (no route without squid), not error out. See README.md.
       "argusMcp" $lc.argusMcp
       "vllmService" (dict "enabled" false)
       "auth" $lc.auth
-      "secrets" (dict "create" true "data" (dict))
+      "secrets" $secrets
 }}
 {{- if $lc.speech.enabled }}
 {{- $_ := set $argusHelmValues "speech" $lc.speech }}

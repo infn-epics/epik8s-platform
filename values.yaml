@@ -662,6 +662,23 @@ aiPlatform:
     project: default
     repoURL: "" ## CHANGE ME: argus-helm-chart's repo, see README.md
     targetRevision: main
+    ## Public URL LibreChat is actually reachable at (matches ingress.hosts[0]
+    ## below). Feeds DOMAIN_CLIENT/DOMAIN_SERVER, which neither argus-helm-chart
+    ## nor the upstream librechat subchart set on their own - required for
+    ## auth.mode: oauth2's redirect_uri to match what's registered at the IdP.
+    publicUrl: ""
+    ## Name of an already-existing Secret in the aiPlatform namespace that
+    ## carries every key argus-helm-chart's own librechat-secret.yaml would
+    ## otherwise generate (JWT_SECRET, CREDS_KEY/IV, MEILI_MASTER_KEY,
+    ## ALLOW_*, and - when auth.mode is oauth2/both -
+    ## OPENID_ISSUER/CLIENT_ID/CLIENT_SECRET/etc). When set, this chart tells
+    ## argus-helm-chart to skip rendering its own Secret (secrets.existingSecret),
+    ## so those values (including auth.oauth2.clientSecretKey's real value)
+    ## must be supplied out-of-band via kubectl - never in this file, see
+    ## README.md "Secrets handling". Left empty, argus-helm-chart generates
+    ## and owns the Secret itself (fine for auth.mode: basic, but oauth2
+    ## needs a real client secret this chart has no other way to pass through).
+    existingSecret: ""
     ingress:
       enabled: false
       className: nginx

@@ -860,8 +860,10 @@ aiPlatform:
     ## same repo every beamline's argus service already points at.
     repoURL: https://github.com/infn-epics/argus-helm-chart.git
     ## Public URL used by LibreChat to build OIDC authorization and callback
-    ## URLs. The OPENID_CLIENT_SECRET remains out of band in the
+    ## URLs (feeds DOMAIN_CLIENT/DOMAIN_SERVER - see values.yaml).
+    ## The OPENID_CLIENT_SECRET remains out of band in the
     ## argus-librechat-credentials Secret; never add it to this file.
+    existingSecret: argus-librechat-credentials
     publicUrl: "https://argus.k8sda.lnf.infn.it"
     auth:
       mode: oauth2
