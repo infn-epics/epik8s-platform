@@ -76,6 +76,14 @@ client secret, so set both from publicUrl whenever it's non-empty.
 {{- $_ := set $configEnv "DOMAIN_CLIENT" $lc.publicUrl }}
 {{- $_ := set $configEnv "DOMAIN_SERVER" $lc.publicUrl }}
 {{- end }}
+{{- /*
+argus-helm-chart's librechat-secret.yaml never sets ALLOW_SOCIAL_REGISTRATION,
+so LibreChat defaults it to off: with auth.mode: oauth2 that leaves no way to
+create an account on first OIDC login. Only rendered when explicitly enabled.
+*/ -}}
+{{- if $lc.allowSocialRegistration }}
+{{- $_ := set $configEnv "ALLOW_SOCIAL_REGISTRATION" "true" }}
+{{- end }}
 {{- if $configEnv }}
 {{- $_ := set $librechatSub "librechat" (dict "configEnv" $configEnv) }}
 {{- end }}

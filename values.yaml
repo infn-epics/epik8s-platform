@@ -667,6 +667,12 @@ aiPlatform:
     ## nor the upstream librechat subchart set on their own - required for
     ## auth.mode: oauth2's redirect_uri to match what's registered at the IdP.
     publicUrl: ""
+    ## Feeds ALLOW_SOCIAL_REGISTRATION. With auth.mode: oauth2 (local email
+    ## login/registration disabled) this is what lets a user's first OIDC login
+    ## create their LibreChat account; off, only pre-existing accounts whose
+    ## provider is already "openid" can sign in. Anyone the IdP authenticates
+    ## can then register, so pair it with auth.oauth2.requiredRole to restrict.
+    allowSocialRegistration: false
     ## Name of an already-existing Secret in the aiPlatform namespace that
     ## carries every key argus-helm-chart's own librechat-secret.yaml would
     ## otherwise generate (JWT_SECRET, CREDS_KEY/IV, MEILI_MASTER_KEY,

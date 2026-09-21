@@ -865,6 +865,8 @@ aiPlatform:
     ## argus-librechat-credentials Secret; never add it to this file.
     existingSecret: argus-librechat-credentials
     publicUrl: "https://argus.k8sda.lnf.infn.it"
+    ## OIDC-only: accounts are created on first INFN SSO login.
+    allowSocialRegistration: true
     auth:
       mode: oauth2
       oauth2:
