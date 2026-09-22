@@ -594,6 +594,26 @@ grafana:
     existingSecret: grafana
     userKey: admin-user
     passwordKey: admin-password
+  ## Dashboard JSON lives in files/grafana/dashboards/ (git-tracked, reviewable)
+  ## rather than inlined here. This "grafana" release is deployed standalone
+  ## (helm upgrade grafana charts/grafana-10.3.0.tgz -f ... - see README.md,
+  ## it predates and is separate from this chart's own ArgoCD-managed pieces),
+  ## so `dashboards.<provider>.<name>.file:` (resolved inside the packaged
+  ## chart) can't reach a path in this repo - each file must be injected at
+  ## deploy time instead, one --set-file per dashboard, e.g.:
+  ##   --set-file dashboards.default.llm-observability.json=files/grafana/dashboards/llm-observability.json
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: default
+          orgId: 1
+          folder: ""
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
   datasources:
     datasources.yaml:
       apiVersion: 1
@@ -612,6 +632,10 @@ grafana:
         - name: Langfuse ClickHouse
           type: grafana-clickhouse-datasource
           access: proxy
+          ## Pinned (rather than left to Grafana's auto-derived hash) so the
+          ## "LLM Observability" dashboards below can reference it by a UID
+          ## that's stable across redeploys.
+          uid: langfuse-clickhouse
           ## LLM token/cost stats: query the "observations"/"traces" tables
           ## this same ClickHouse backs for Langfuse itself (see langfuse:
           ## block below) - cross-namespace ClusterIP, same as every other

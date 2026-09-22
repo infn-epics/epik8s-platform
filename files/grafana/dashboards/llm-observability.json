@@ -1,0 +1,1227 @@
+{
+  "id": null,
+  "uid": "llm-observability-langfuse",
+  "title": "LLM Observability (Langfuse)",
+  "description": "Model usage, token/cost stats, latency & errors, tool usage, and answer feedback - sourced from Langfuse's ClickHouse (observations/traces/scores).",
+  "tags": [
+    "llm",
+    "langfuse",
+    "observability"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Overview",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "title": "Traces",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT count() AS value FROM traces WHERE is_deleted = 0 AND $__timeFilter(timestamp)",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Generations",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT count() AS value FROM observations WHERE is_deleted = 0 AND type = 'GENERATION' AND $__timeFilter(start_time)",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Total Tokens",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT sum(usage_details['total']) AS value FROM observations WHERE is_deleted = 0 AND type = 'GENERATION' AND $__timeFilter(start_time)",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Total Cost",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT sum(total_cost) AS value FROM observations WHERE is_deleted = 0 AND type = 'GENERATION' AND $__timeFilter(start_time)",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "currencyUSD",
+          "decimals": 4
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 6,
+      "title": "Unique Users",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT uniq(user_id) AS value FROM traces WHERE is_deleted = 0 AND $__timeFilter(timestamp)",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 7,
+      "title": "Avg Feedback Score",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT avg(value) AS value FROM scores WHERE is_deleted = 0 AND data_type = 'NUMERIC' AND $__timeFilter(timestamp)",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 8,
+      "title": "Model Usage & Tokens",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "panels": []
+    },
+    {
+      "id": 9,
+      "title": "Requests by Model",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT $__timeInterval(start_time) AS time, provided_model_name AS metric, count() AS value\n        FROM observations\n        WHERE is_deleted = 0 AND type = 'GENERATION' AND $__timeFilter(start_time)\n        GROUP BY time, metric\n        ORDER BY time",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "pointSize": 5
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Tokens by Model",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT $__timeInterval(start_time) AS time, provided_model_name AS metric, sum(usage_details['total']) AS value\n        FROM observations\n        WHERE is_deleted = 0 AND type = 'GENERATION' AND $__timeFilter(start_time)\n        GROUP BY time, metric\n        ORDER BY time",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "pointSize": 5
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "title": "Requests by Model (Total)",
+      "type": "bargauge",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 14
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT provided_model_name AS metric, count() AS value\n        FROM observations\n        WHERE is_deleted = 0 AND type = 'GENERATION' AND $__timeFilter(start_time)\n        GROUP BY metric\n        ORDER BY value DESC",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient"
+      }
+    },
+    {
+      "id": 12,
+      "title": "Model Summary",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 8,
+        "y": 14
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT\n          provided_model_name AS `Model`,\n          count() AS `Requests`,\n          sum(usage_details['input']) AS `Input Tokens`,\n          sum(usage_details['output']) AS `Output Tokens`,\n          round(sum(total_cost), 4) AS `Cost ($)`,\n          round(avg(dateDiff('millisecond', start_time, end_time)), 0) AS `Avg Latency (ms)`\n        FROM observations\n        WHERE is_deleted = 0 AND type = 'GENERATION' AND $__timeFilter(start_time)\n        GROUP BY `Model`\n        ORDER BY `Requests` DESC",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 13,
+      "title": "Cost",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "panels": []
+    },
+    {
+      "id": 14,
+      "title": "Cost by Model",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 23
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT $__timeInterval(start_time) AS time, provided_model_name AS metric, sum(total_cost) AS value\n        FROM observations\n        WHERE is_deleted = 0 AND type = 'GENERATION' AND $__timeFilter(start_time)\n        GROUP BY time, metric\n        ORDER BY time",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "pointSize": 5
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 15,
+      "title": "Cost Today",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 23
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT sum(total_cost) AS value FROM observations WHERE is_deleted = 0 AND type = 'GENERATION' AND start_time >= today()",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "currencyUSD",
+          "decimals": 4
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 16,
+      "title": "Latency & Errors",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "panels": []
+    },
+    {
+      "id": 17,
+      "title": "Latency (p50 / p95)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT $__timeInterval(start_time) AS time, 'p50' AS metric,\n                   quantile(0.5)(dateDiff('millisecond', start_time, end_time)) AS value\n            FROM observations\n            WHERE is_deleted = 0 AND type = 'GENERATION' AND end_time IS NOT NULL AND $__timeFilter(start_time)\n            GROUP BY time\n            ORDER BY time",
+          "pluginVersion": "4.21.3"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT $__timeInterval(start_time) AS time, 'p95' AS metric,\n                   quantile(0.95)(dateDiff('millisecond', start_time, end_time)) AS value\n            FROM observations\n            WHERE is_deleted = 0 AND type = 'GENERATION' AND end_time IS NOT NULL AND $__timeFilter(start_time)\n            GROUP BY time\n            ORDER BY time",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "pointSize": 5
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 18,
+      "title": "Error Rate",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT $__timeInterval(start_time) AS time, 100.0 * countIf(level = 'ERROR') / count() AS value\n        FROM observations\n        WHERE is_deleted = 0 AND $__timeFilter(start_time)\n        GROUP BY time\n        ORDER BY time",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "pointSize": 5
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "id": 19,
+      "title": "Recent Errors",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT start_time AS `Time`, provided_model_name AS `Model`, name AS `Observation`, status_message AS `Error`\n        FROM observations\n        WHERE is_deleted = 0 AND level = 'ERROR' AND $__timeFilter(start_time)\n        ORDER BY start_time DESC\n        LIMIT 100",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 20,
+      "title": "Tool Usage",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 48
+      },
+      "panels": []
+    },
+    {
+      "id": 21,
+      "title": "Top Tools Used",
+      "type": "barchart",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 49
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT arrayJoin(tool_call_names) AS metric, count() AS value\n        FROM observations\n        WHERE is_deleted = 0 AND $__timeFilter(start_time) AND notEmpty(tool_call_names)\n        GROUP BY metric\n        ORDER BY value DESC\n        LIMIT 20",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "legend": {
+          "showLegend": false
+        }
+      }
+    },
+    {
+      "id": 22,
+      "title": "Answer Feedback & Quality",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 57
+      },
+      "panels": []
+    },
+    {
+      "id": 23,
+      "title": "Avg Feedback Score Over Time",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 58
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT $__timeInterval(timestamp) AS time, name AS metric, avg(value) AS value\n        FROM scores\n        WHERE is_deleted = 0 AND data_type = 'NUMERIC' AND $__timeFilter(timestamp)\n        GROUP BY time, metric\n        ORDER BY time",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "pointSize": 5
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 24,
+      "title": "Feedback Distribution",
+      "type": "piechart",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 58
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT\n          multiIf(\n            data_type = 'BOOLEAN', if(value = 1, 'Positive', 'Negative'),\n            data_type = 'CATEGORICAL', coalesce(string_value, 'unknown'),\n            toString(round(value, 1))\n          ) AS metric,\n          count() AS value\n        FROM scores\n        WHERE is_deleted = 0 AND $__timeFilter(timestamp)\n        GROUP BY metric\n        ORDER BY value DESC",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ]
+        }
+      }
+    },
+    {
+      "id": 25,
+      "title": "Recent Feedback Comments",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 66
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT timestamp AS `Time`, name AS `Score`, value AS `Value`, comment AS `Comment`, trace_id AS `Trace ID`\n        FROM scores\n        WHERE is_deleted = 0 AND comment IS NOT NULL AND comment != '' AND $__timeFilter(timestamp)\n        ORDER BY timestamp DESC\n        LIMIT 100",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 26,
+      "title": "Sessions & Traces",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 74
+      },
+      "panels": []
+    },
+    {
+      "id": 27,
+      "title": "Traces Over Time",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 75
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT $__timeInterval(timestamp) AS time, count() AS value\n        FROM traces\n        WHERE is_deleted = 0 AND $__timeFilter(timestamp)\n        GROUP BY time\n        ORDER BY time",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "pointSize": 5
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "id": 28,
+      "title": "Unique Sessions",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 75
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT uniq(session_id) AS value FROM traces WHERE is_deleted = 0 AND $__timeFilter(timestamp)",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 29,
+      "title": "Bookmarked Traces",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "langfuse-clickhouse"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 79
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "langfuse-clickhouse"
+          },
+          "editorType": "sql",
+          "rawSql": "SELECT countIf(bookmarked) AS value FROM traces WHERE is_deleted = 0 AND $__timeFilter(timestamp)",
+          "pluginVersion": "4.21.3"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    }
+  ]
+}
