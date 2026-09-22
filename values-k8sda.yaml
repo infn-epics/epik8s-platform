@@ -632,10 +632,16 @@ grafana:
         - name: Langfuse ClickHouse
           type: grafana-clickhouse-datasource
           access: proxy
-          ## Pinned (rather than left to Grafana's auto-derived hash) so the
-          ## "LLM Observability" dashboards below can reference it by a UID
-          ## that's stable across redeploys.
-          uid: langfuse-clickhouse
+          ## Deliberately NOT setting an explicit `uid:` here. Tried pinning
+          ## one (to give the "LLM Observability" dashboard a stable
+          ## reference) - broke live: Grafana's file provisioner can't
+          ## rename an already-live datasource's uid in place, it just
+          ## errors "data source not found" on every subsequent boot
+          ## (confirmed live, crash-looped until reverted). Grafana's own
+          ## auto-derived hash (from name+orgId) is already stable across
+          ## redeploys as long as the name doesn't change, so the dashboard
+          ## JSON (files/grafana/dashboards/llm-observability.json)
+          ## hardcodes that computed uid instead - see its own note.
           ## LLM token/cost stats: query the "observations"/"traces" tables
           ## this same ClickHouse backs for Langfuse itself (see langfuse:
           ## block below) - cross-namespace ClusterIP, same as every other
