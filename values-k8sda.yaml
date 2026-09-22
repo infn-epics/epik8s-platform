@@ -729,6 +729,39 @@ grafana:
 ## of band - see README.md "Observability: Langfuse".
 langfuse:
   langfuse:
+    ## Bootstraps the org/project/API-key LibreChat already expects (see
+    ## aiPlatform.librechat.llm.endpoints - LANGFUSE_PUBLIC_KEY/SECRET_KEY in
+    ## argus-librechat-credentials). Without this, LibreChat's traces/
+    ## feedback calls hit Langfuse with a key that was never actually
+    ## registered - confirmed live: the org/user existed (someone completed
+    ## first login) but zero projects and zero api_keys existed in Postgres,
+    ## so every call failed "Invalid credentials". Upsert semantics by ID -
+    ## safe to leave set permanently, re-running on every pod start is a
+    ## no-op once the project/key exist. ORG_ID/ORG_NAME match the real,
+    ## already-existing "INFN-LNF" org (found live) so this adopts it rather
+    ## than creating a duplicate.
+    additionalEnv:
+      - name: LANGFUSE_INIT_ORG_ID
+        value: "cmud6ti0t0000a407z8f6q5yk"
+      - name: LANGFUSE_INIT_ORG_NAME
+        value: "INFN-LNF"
+      - name: LANGFUSE_INIT_PROJECT_ID
+        value: "6a5fb58e-59e4-4d31-afb0-bfcd08204657"
+      - name: LANGFUSE_INIT_PROJECT_NAME
+        value: "LibreChat"
+      ## Public key isn't sensitive (Langfuse displays it in its own UI) -
+      ## same value already live in argus-librechat-credentials.
+      - name: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
+        value: "pk-lf-ffae83ae-cafe-4c85-b345-2206cc2a916c"
+      ## "langfuse-init-keys" Secret provisioned once, out of band, with the
+      ## same LANGFUSE_SECRET_KEY value already live in
+      ## argus-librechat-credentials (namespace ai-platform) - Secrets don't
+      ## cross namespaces, same pattern as grafana-clickhouse above.
+      - name: LANGFUSE_INIT_PROJECT_SECRET_KEY
+        valueFrom:
+          secretKeyRef:
+            name: langfuse-init-keys
+            key: secret-key
     nextauth:
       url: https://langfuse.k8sda.lnf.infn.it
     ingress:
