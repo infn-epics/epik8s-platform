@@ -609,8 +609,45 @@ grafana:
           ## same "epik8s-platform" release name / "logging" namespace assumption as
           ## the alloy: block above - see README.md "Centralized logging".
           url: http://epik8s-platform-loki.logging.svc.cluster.local:3100
+        - name: Langfuse ClickHouse
+          type: grafana-clickhouse-datasource
+          access: proxy
+          ## LLM token/cost stats: query the "observations"/"traces" tables
+          ## this same ClickHouse backs for Langfuse itself (see langfuse:
+          ## block below) - cross-namespace ClusterIP, same as every other
+          ## cross-namespace host in this file.
+          jsonData:
+            host: epik8s-platform-clickhouse.langfuse.svc.cluster.local
+            port: 8123
+            protocol: http
+            defaultDatabase: default
+            username: default
+            tlsSkipVerify: true
+          ## Grafana provisioning expands ${VAR} in datasource config from the
+          ## pod's own env at startup - CLICKHOUSE_GRAFANA_PASSWORD is wired
+          ## via envValueFrom below. The "grafana-clickhouse" Secret (key
+          ## "password") must be provisioned once, out of band, with the same
+          ## value as langfuse-secrets' clickhouse-password in namespace
+          ## "langfuse" (Secrets don't cross namespaces) - see README.md
+          ## "Observability: Langfuse".
+          secureJsonData:
+            password: ${CLICKHOUSE_GRAFANA_PASSWORD}
+  envValueFrom:
+    CLICKHOUSE_GRAFANA_PASSWORD:
+      secretKeyRef:
+        name: grafana-clickhouse
+        key: password
   env:
     GF_SERVER_ROOT_URL: https://grafana.k8sda.lnf.infn.it
+    ## The background plugin installer (for the "plugins:" list below, e.g.
+    ## grafana-clickhouse-datasource) needs to reach grafana.com's catalog API
+    ## and is fatal on failure on current Grafana - confirmed live, it crash-
+    ## looped with "context deadline exceeded" until these were added. Same
+    ## squid proxy every other outbound-fetching component in this chart uses
+    ## - see aiPlatform.proxy above.
+    HTTP_PROXY: http://squid.lnf.infn.it:3128
+    HTTPS_PROXY: http://squid.lnf.infn.it:3128
+    NO_PROXY: localhost,127.0.0.1,.svc,.cluster.local,10.0.0.0/8,192.168.0.0/16
   grafana.ini:
     plugins:
       allow_loading_unsigned_plugins: sasaki77-archiverappliance-datasource
@@ -618,6 +655,7 @@ grafana:
       root_url: https://grafana.k8sda.lnf.infn.it
   plugins:
     - sasaki77-archiverappliance-datasource
+    - grafana-clickhouse-datasource
   extraInitContainers:
     - name: install-custom-plugins
       image: grafana/grafana:latest
@@ -625,7 +663,11 @@ grafana:
         - /bin/sh
         - -c
       args:
-        - /usr/share/grafana/bin/grafana-cli --pluginUrl https://github.com/sasaki77/archiverappliance-datasource/releases/latest/download/archiverappliance-datasource.zip
+        ## "grafana-cli" (hyphenated standalone binary) no longer exists in
+        ## current grafana/grafana:latest images - confirmed live by exec-ing
+        ## into the image, it now only ships one unified "grafana" binary,
+        ## with cli as a subcommand.
+        - /usr/share/grafana/bin/grafana cli --pluginUrl https://github.com/sasaki77/archiverappliance-datasource/releases/latest/download/archiverappliance-datasource.zip
           plugins install sasaki77-archiverappliance-datasource;
       volumeMounts:
         - name: grafana-plugins
