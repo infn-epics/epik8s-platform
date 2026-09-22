@@ -899,9 +899,13 @@ langfuse:
     ## memory tracker reserves ~90% of that (691.2MiB) and hit
     ## MEMORY_LIMIT_EXCEEDED just from its own internal system logs
     ## (trace_log/metric_log/asynchronous_metric_log), before any real
-    ## trace data. "medium" (1536Mi) is the smallest preset that ran
-    ## stably - confirmed live, not a guess.
-    resourcesPreset: medium
+    ## trace data. "medium" (1536Mi) ran stably at first, but 62 days of
+    ## accumulated Langfuse trace data grew background merge tasks past
+    ## that budget - confirmed live via `kubectl describe pod` showing
+    ## OOMKilled/CrashLoopBackOff with 15000+ restarts and a
+    ## MEMORY_LIMIT_EXCEEDED merge-task exception in the container logs.
+    ## Bumped to "large" (3072Mi limit) 2026-09-22.
+    resourcesPreset: large
     host: epik8s-platform-clickhouse
     auth:
       existingSecret: langfuse-secrets

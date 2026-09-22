@@ -1,0 +1,21 @@
+# Patterns to ignore when building Helm packages.
+# Keeps the packaged chart (and therefore every stored Helm release object)
+# down to what templates actually need at render time - this repo is a
+# monorepo of site docs/scripts alongside the chart, and bundling all of it
+# into every release's stored Secret is what pushed a real release
+# ("epik8s-platform" in namespace "langfuse") past etcd's 1MiB Secret limit,
+# blocking further `helm upgrade` entirely. See README.md "Verification".
+.git/
+.gitignore
+.helmignore
+*.md
+docs/
+tests/
+# Local-only helper scripts, never referenced by any template via .Files.*.
+secrets-k8sda/
+BALTIG_LNF_CONTROL_AGO26.txt
+# Reference-only overlay files, always passed via `helm ... -f <file>` from
+# the CLI - never read from inside a template via .Files.*, so they don't
+# need to travel inside the packaged chart archive itself.
+values-domain-*.yaml
+values-generic.yaml
