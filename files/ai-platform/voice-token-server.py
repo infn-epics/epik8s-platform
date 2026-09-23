@@ -42,6 +42,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -77,7 +78,39 @@ async def _dispatch_agent(room: str, model: str) -> None:
         )
 
 
+# Two /token requests for the same room+model within a few seconds are one
+# operator action seen twice (the dashboard's connect/disconnect/connect race
+# on page load, a double click), not two operators. Every dispatch starts an
+# agent that answers EVERY message in the room, so the duplicate made each
+# reply - transcript, tool tables - show up twice. This is deliberately NOT
+# "skip if an agent already exists": that is the approach the module docstring
+# records as broken (a reconnect after the old agent left got no agent at
+# all). It only collapses a burst, so a genuine rejoin after the window still
+# always gets a fresh agent. Set to 0 to disable.
+# Per-process state: with voiceToken.replicas > 1 a burst whose two requests
+# are load-balanced onto different replicas is not caught. Best-effort
+# defence in depth - the dashboard no longer sends the duplicate request
+# (VoiceContext.jsx), and pinning clients to one replica (ingress
+# upstream-hash-by) or running one replica would make this airtight.
+DISPATCH_DEDUPE_SECONDS = float(os.environ.get("DISPATCH_DEDUPE_SECONDS", "15"))
+_recent_dispatch: dict[tuple[str, str], float] = {}
+_recent_dispatch_lock = threading.Lock()
+
+
 def dispatch_agent(room: str, model: str) -> None:
+    key = (room, model)
+    with _recent_dispatch_lock:
+        last = _recent_dispatch.get(key)
+        if last is not None and time.monotonic() - last < DISPATCH_DEDUPE_SECONDS:
+            logger.info(
+                "skipping duplicate dispatch to room %r (model %r): one was requested %.1fs ago",
+                room, model, time.monotonic() - last,
+            )
+            return
+        # Reserve BEFORE the network call: the duplicate arrives concurrently
+        # on another thread of ThreadingHTTPServer, so checking only after the
+        # first dispatch finishes would let both through.
+        _recent_dispatch[key] = time.monotonic()
     # A dispatch failure (e.g. livekit-server momentarily unreachable)
     # shouldn't fail the /token response - the room join itself still works
     # and is still useful (e.g. reviewing past highlights); log loudly
@@ -85,6 +118,9 @@ def dispatch_agent(room: str, model: str) -> None:
     try:
         asyncio.run(_dispatch_agent(room, model))
     except Exception:
+        with _recent_dispatch_lock:
+            # A failed dispatch must not block the client's retry.
+            _recent_dispatch.pop(key, None)
         logger.exception("failed to dispatch %s to room %r", AGENT_NAME, room)
 
 
