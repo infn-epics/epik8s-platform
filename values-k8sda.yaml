@@ -931,6 +931,16 @@ aiPlatform:
 
   voiceToken:
     enabled: true
+    ## One replica on purpose. Every /token request dispatches a voice agent
+    ## and every agent in a room answers every message, so the token service
+    ## collapses same-room+same-model bursts (DISPATCH_DEDUPE_SECONDS) - but
+    ## that state is per process. Confirmed live with 2 replicas: two
+    ## minimax-m27 requests in the same second were load-balanced onto
+    ## different replicas and both dispatched an agent, so every reply showed
+    ## up twice. The service is stateless and light and the dashboard retries
+    ## with backoff, so a brief restart is harmless; availability is not worth
+    ## duplicated answers.
+    replicas: 1
 
   mcp:
     ## Do not deploy the historical http-echo placeholders on k8sda.
