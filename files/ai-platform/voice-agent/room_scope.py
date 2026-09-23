@@ -5,6 +5,9 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 
+OPERATOR_ROOM_SEP = "--"
+
+
 class RoomScopeError(ValueError):
     """Raised when a room cannot be mapped to exactly one beamline."""
 
@@ -23,7 +26,15 @@ def select_server_for_room(
     if not room_name:
         raise RoomScopeError("LiveKit room name is empty")
 
-    matches = [server for server in servers if server.get("roomName") == room_name]
+    # A configured room, or that room plus an operator suffix ("<room>--<operator>").
+    # The suffix only ever narrows a room to one operator's private copy of the
+    # SAME beamline; the token service (which alone dispatches agents) decides
+    # who may get which room, so nothing here widens access.
+    matches = [
+        server for server in servers
+        if server.get("roomName") == room_name
+        or (server.get("roomName") and room_name.startswith(f"{server['roomName']}{OPERATOR_ROOM_SEP}"))
+    ]
     if len(matches) != 1:
         raise RoomScopeError(
             f"room {room_name!r} must map to exactly one ARGUS MCP server; "

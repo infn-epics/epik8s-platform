@@ -952,6 +952,7 @@ aiPlatform:
     ttsVoice: "if_sara"
 
   voiceToken:
+    requireLogin: true
     enabled: true
     ## One replica on purpose. Every /token request dispatches a voice agent
     ## and every agent in a room answers every message, so the token service

@@ -571,6 +571,9 @@ aiPlatform:
 
   voiceToken:
     enabled: false
+    ## true (needs auth.keycloak.enabled): /token requires a Keycloak login with the
+    ## argus.use role and beamline membership; each operator gets a private room.
+    requireLogin: false
     image: python:3.11-slim
     replicas: 2
     tokenTtlSeconds: 21600 ## 6h

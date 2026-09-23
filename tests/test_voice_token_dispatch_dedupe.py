@@ -137,3 +137,25 @@ class EvictStaleAgentsTests(unittest.IsolatedAsyncioTestCase):
                 raise RuntimeError("down")
 
         await server._remove_existing_agents(types.SimpleNamespace(room=Room()), "r")
+
+
+class OperatorRoomTests(unittest.TestCase):
+    ROOMS = {"btf-argus-control-room": "btf", "sparc-argus-control-room": "sparc"}
+
+    def test_private_room_per_operator_is_stable_and_distinct(self):
+        a = {"sub": "id-1", "preferred_username": "operator.btf"}
+        b = {"sub": "id-2", "preferred_username": "operator-btf"}  # same slug, other user
+        base = "btf-argus-control-room"
+        self.assertEqual(server.operator_room(base, a), server.operator_room(base, a))
+        self.assertNotEqual(server.operator_room(base, a), server.operator_room(base, b))
+        self.assertTrue(server.operator_room(base, a).startswith(base + "--operator-btf-"))
+
+    def test_authorize_needs_role_and_beamline(self):
+        ok = lambda c, room="btf-argus-control-room": server.authorize_voice(c, room, self.ROOMS, "argus.use")[0]
+        self.assertTrue(ok({"roles": ["argus.use"], "beamlines": ["btf"]}))
+        self.assertTrue(ok({"roles": ["argus.use"], "beamlines": ["BTF"]}))
+        self.assertFalse(ok({"roles": ["pv.read"], "beamlines": ["btf"]}))                    # viewer: no argus.use
+        self.assertFalse(ok({"roles": ["argus.use"], "beamlines": ["sparc"]}))                # wrong beamline
+        self.assertFalse(ok({"roles": ["argus.use"], "beamlines": []}))                       # deny by default
+        self.assertFalse(ok({"roles": ["argus.use"], "beamlines": ["btf"]}, "unknown-room"))  # unmapped room
+        self.assertTrue(ok({"roles": ["platform.admin"]}))

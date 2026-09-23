@@ -15,6 +15,16 @@ SERVERS = [
 ]
 
 
+class OperatorRoomScopeTests(unittest.TestCase):
+    def test_operator_suffix_maps_to_its_own_beamline_only(self):
+        self.assertEqual(
+            select_server_for_room("sparc-argus-control-room--ann-1a2b3c", SERVERS)["name"], "sparc-argus")
+
+    def test_lookalike_prefix_without_separator_is_refused(self):
+        with self.assertRaises(RoomScopeError):
+            select_server_for_room("sparc-argus-control-roomX", SERVERS)
+
+
 class RoomScopeTests(unittest.TestCase):
     def test_selects_only_exact_room_match(self):
         selected = select_server_for_room("sparc-argus-control-room", SERVERS)

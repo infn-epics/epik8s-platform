@@ -14,9 +14,11 @@ change aiPlatform.livekit.existingSecret.
 {{- $ns := .Values.aiPlatform.namespace }}
 {{- $v := .Values.aiPlatform.voiceToken }}
 {{- $allowedRooms := list }}
+{{- $roomBeamlines := dict }}
 {{- range .Values.aiPlatform.librechat.argusMcpServers }}
 {{- $roomName := required (printf "aiPlatform.librechat.argusMcpServers[%s].roomName is required when voiceToken is enabled" .name) .roomName }}
 {{- $allowedRooms = append $allowedRooms $roomName }}
+{{- $_ := set $roomBeamlines $roomName (.beamline | default .namespace | default (trimSuffix "-argus" .name)) }}
 {{- end }}
 apiVersion: v1
 kind: ConfigMap
@@ -50,7 +52,7 @@ spec:
         - name: server
           image: {{ $v.image }}
           command: ["sh", "-lc"]
-          args: ["pip install --no-cache-dir pyjwt livekit-api && python /app/server.py"]
+          args: ["pip install --no-cache-dir 'pyjwt[crypto]' livekit-api && python /app/server.py"]
           ports:
             - name: http
               containerPort: 8080
@@ -72,6 +74,18 @@ spec:
               value: {{ $v.tokenTtlSeconds | quote }}
             - name: ALLOWED_ROOMS_JSON
               value: {{ $allowedRooms | uniq | toJson | quote }}
+            {{- with $.Values.auth.keycloak }}
+            {{- if and .enabled $v.requireLogin }}
+            ## Keycloak login required to obtain a voice token; each operator
+            ## gets a private room "<room>--<user>-<hash>".
+            - name: OIDC_ISSUER
+              value: {{ printf "https://%s/realms/%s" .hostname (.realm | default "epik8s") | quote }}
+            - name: OIDC_AUDIENCE
+              value: {{ .audience | default "epik8s-services" | quote }}
+            - name: ROOM_BEAMLINES_JSON
+              value: {{ $roomBeamlines | toJson | quote }}
+            {{- end }}
+            {{- end }}
             - name: LLM_ALLOWED_MODELS_JSON
               value: {{ $.Values.aiPlatform.voiceAgent.llmAllowedModels | default (list $.Values.aiPlatform.voiceAgent.llmModel) | toJson | quote }}
             - name: VOICE_DEFAULT_MODEL

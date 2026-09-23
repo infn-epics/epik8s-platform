@@ -40,8 +40,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import hashlib
 import logging
 import os
+import re
 import threading
 import time
 import uuid
@@ -51,7 +53,7 @@ import jwt
 from livekit import api as lkapi
 from livekit.protocol.agent_dispatch import CreateAgentDispatchRequest
 
-from room_scope import RoomScopeError, require_allowed_room
+from room_scope import OPERATOR_ROOM_SEP, RoomScopeError, require_allowed_room
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("voice-token")
@@ -65,10 +67,58 @@ ALLOWED_ROOMS = json.loads(os.environ.get("ALLOWED_ROOMS_JSON", "[]"))
 ALLOWED_MODELS = frozenset(json.loads(os.environ.get("LLM_ALLOWED_MODELS_JSON", "[]")))
 DEFAULT_MODEL = os.environ.get("VOICE_DEFAULT_MODEL", "")
 
+# Keycloak login. Unset OIDC_ISSUER => legacy anonymous behaviour. When set,
+# every /token request needs a valid access token carrying OIDC_REQUIRED_ROLE
+# and membership of the beamline that owns the requested room, and the caller
+# gets a PRIVATE room of their own (see operator_room) instead of the shared one.
+OIDC_ISSUER = os.environ.get("OIDC_ISSUER", "").rstrip("/")
+OIDC_AUDIENCE = os.environ.get("OIDC_AUDIENCE", "epik8s-services")
+OIDC_REQUIRED_ROLE = os.environ.get("OIDC_REQUIRED_ROLE", "argus.use")
+ROOM_BEAMLINES = json.loads(os.environ.get("ROOM_BEAMLINES_JSON", "{}"))
+
 # Must match agent.py's WorkerOptions(agent_name=...) exactly - this is how
 # AgentDispatchService.CreateDispatch picks which registered worker pool to
 # hand the job to.
 AGENT_NAME = "argus-voice-agent"
+
+
+def operator_room(base_room: str, claims: dict) -> str:
+    """The signed-in operator's private room: '<base>--<username>-<hash>'.
+
+    One room per operator means an operator's tabs share one agent and never
+    hear anyone else's conversation. The short hash of the immutable `sub`
+    keeps two usernames that slug identically ('a.b' / 'a-b') apart.
+    """
+    name = str(claims.get("preferred_username") or claims.get("sub") or "")
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:32] or "user"
+    digest = hashlib.sha1(str(claims.get("sub", name)).encode()).hexdigest()[:6]
+    return f"{base_room}{OPERATOR_ROOM_SEP}{slug}-{digest}"
+
+
+def authorize_voice(claims: dict, base_room: str, room_beamlines: dict, required_role: str) -> tuple[bool, str]:
+    """Role AND beamline, deny by default (same rule as the dashboard backend)."""
+    roles = claims.get("roles") if isinstance(claims.get("roles"), list) else []
+    if "platform.admin" not in roles and required_role not in roles:
+        return False, f"missing role {required_role}"
+    beamline = str(room_beamlines.get(base_room, "")).lower()
+    member = [str(b).lower() for b in (claims.get("beamlines") or [])]
+    if "platform.admin" in roles:
+        return True, ""
+    if not beamline or beamline not in member:
+        return False, "not a member of this room's beamline"
+    return True, ""
+
+
+_jwks_client = None
+
+
+def verify_token(token: str) -> dict:
+    """Validate a Keycloak access token (signature, iss, aud, exp)."""
+    global _jwks_client
+    if _jwks_client is None:
+        _jwks_client = jwt.PyJWKClient(f"{OIDC_ISSUER}/protocol/openid-connect/certs", cache_keys=True)
+    key = _jwks_client.get_signing_key_from_jwt(token).key
+    return jwt.decode(token, key, algorithms=["RS256"], audience=OIDC_AUDIENCE, issuer=OIDC_ISSUER)
 
 
 # ParticipantInfo.Kind.AGENT in the LiveKit protocol.
@@ -190,7 +240,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:  # CORS preflight - the dashboard calls this cross-origin
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
         self.end_headers()
 
@@ -214,6 +264,17 @@ class Handler(BaseHTTPRequestHandler):
 
         room = (body.get("room") or "").strip()
         identity = (body.get("identity") or "").strip() or f"operator-{uuid.uuid4().hex[:8]}"
+        claims = None
+        if OIDC_ISSUER:
+            header = self.headers.get("Authorization", "")
+            if not header.lower().startswith("bearer "):
+                self._send_json(401, {"error": "authentication_required"})
+                return
+            try:
+                claims = verify_token(header[7:].strip())
+            except Exception:
+                self._send_json(401, {"error": "invalid_token"})
+                return
         model = (body.get("model") or DEFAULT_MODEL).strip()
         if not room:
             self._send_json(400, {"error": "missing_room"})
@@ -227,8 +288,19 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": "model_not_allowed"})
             return
 
+        if claims is not None:
+            ok, reason = authorize_voice(claims, room, ROOM_BEAMLINES, OIDC_REQUIRED_ROLE)
+            if not ok:
+                logger.info("denied voice token for %r on %r: %s", claims.get("preferred_username"), room, reason)
+                self._send_json(403, {"error": "forbidden", "reason": reason})
+                return
+            room = operator_room(room, claims)
+            # Stable identity: a second tab of the same operator replaces the
+            # first instead of adding a participant.
+            identity = f"operator-{room.rsplit(OPERATOR_ROOM_SEP, 1)[-1]}"
+
         dispatch_agent(room, model)
-        self._send_json(200, {"token": mint_token(room, identity)})
+        self._send_json(200, {"token": mint_token(room, identity), "room": room})
 
 
 def main() -> None:
