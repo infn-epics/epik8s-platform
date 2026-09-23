@@ -1038,6 +1038,23 @@ aiPlatform:
           fetch: true
         modelDisplayLabel: "Marconi C1002 (Qwen 3.8 27B)"
     ## New conversations open on AI-Gateway-90 / minimax-m27 by default.
+    ##
+    ## maxContextTokens per model below: LibreChat has no config knob for its
+    ## own hardcoded `system_default` fallback (32000 tokens - baked into
+    ## packages/api's compiled maxTokensMap, would need a rebuilt image to
+    ## change) used for any model name it doesn't recognize in its built-in
+    ## tables - which is every model here, custom internal names. Without an
+    ## explicit override every one of these was silently capped at ~32k
+    ## regardless of real capacity, triggering LibreChat's own history
+    ## summarization far earlier than necessary. Real values below are NOT
+    ## guessed - verified live 2026-09-23:
+    ## - Marconi C1002: its own /props endpoint reports n_ctx directly.
+    ## - AI-Gateway-90 models: deliberately overflowed each with an oversized
+    ##   prompt: vLLM's own "This model's maximum context length is N tokens"
+    ##   validation error reports the real number exactly.
+    ## AI-Gateway-WP6's qwen36-27b could NOT be verified this way (gateway
+    ## returned "no healthy upstream" at check time) - given 128000 instead
+    ## of guessing a number that could be wrong in either direction.
     modelSpecs:
       enabled: true
       list:
@@ -1047,9 +1064,53 @@ aiPlatform:
           preset:
             endpoint: "AI-Gateway-90"
             model: "minimax-m27"
+            maxContextTokens: 204800
+        - name: "ai-gateway-90-qwen36-27b"
+          label: "AI-Gateway-90 - Qwen3.6 27B"
+          preset:
+            endpoint: "AI-Gateway-90"
+            model: "qwen36-27b"
+            maxContextTokens: 262144
+        - name: "ai-gateway-90-qwen36-27b-x2"
+          label: "AI-Gateway-90 - Qwen3.6 27B x2"
+          preset:
+            endpoint: "AI-Gateway-90"
+            model: "qwen36-27b-x2"
+            maxContextTokens: 262144
+        - name: "ai-gateway-90-gemma-4-31b-it"
+          label: "AI-Gateway-90 - Gemma 4 31B IT"
+          preset:
+            endpoint: "AI-Gateway-90"
+            model: "gemma-4-31b-it"
+            maxContextTokens: 40960
+        - name: "ai-gateway-90-qwen35-122b-a10b-gptq-int4"
+          label: "AI-Gateway-90 - Qwen3.5 122B A10B (GPTQ INT4)"
+          preset:
+            endpoint: "AI-Gateway-90"
+            model: "qwen35-122b-a10b-gptq-int4"
+            maxContextTokens: 262144
+        - name: "ai-gateway-wp6-qwen36-27b"
+          label: "AI-Gateway-WP6 - Qwen3.6 27B"
+          preset:
+            endpoint: "AI-Gateway-WP6"
+            model: "qwen36-27b"
+            ## Unverified (see note above) - 128000 per explicit instruction,
+            ## not a measured value like the others in this list.
+            maxContextTokens: 128000
+        - name: "marconi-c1002"
+          label: "Marconi C1002 (Qwen 3.8 27B)"
+          preset:
+            endpoint: "Marconi C1002"
+            model: "/home/rgargana/models/Qwen3.8-27B-Q4_K_M.gguf"
+            maxContextTokens: 262144
       ## Without this, a non-empty modelSpecs.list hides LibreChat's normal
       ## endpoint/model dropdown entirely - every llmEndpoints[].name above
       ## must be listed here too, or users can only ever get minimax-m27.
+      ## Note this dropdown path bypasses the maxContextTokens presets above
+      ## entirely (LibreChat only applies a preset's fields when a spec tile
+      ## itself is selected) - picking a model via the raw dropdown still
+      ## falls back to LibreChat's own ~32k guess. Use the named tiles above
+      ## for the verified real limits.
       addedEndpoints:
         - "LiteLLM Gateway"
         - "AI-Gateway-WP6"
