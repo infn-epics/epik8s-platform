@@ -35,6 +35,7 @@ from livekit.agents import function_tool
 from livekit.agents.llm import FunctionTool
 
 from argus_content import DeviceCatalogCache, emit_content_for_tool
+from action_gate import WRITE_TOOLS, ActionGate
 from events import send_highlight
 
 logger = logging.getLogger("voice-agent.argus-mcp-bridge")
@@ -50,9 +51,11 @@ READ_ONLY_TOOLS = frozenset({
     "search_snapshots", "get_snapshot",
 })
 
-# Deliberately excluded (write/control, or disarmed-but-wired-so-exclude-
-# pre-emptively): set_pv, set_pv_value, restart_ioc, execute_procedure,
-# create_logbook_entry.
+# Write/control tools (action_gate.WRITE_TOOLS: set_pv, set_pv_value,
+# restart_ioc, execute_procedure, create_logbook_entry) are NOT in the
+# allowlist above. They are exposed only to a session that was dispatched with
+# the argus.actions capability, and then only through an ActionGate that needs
+# the operator's explicit confirmation for every call.
 
 # Tools whose arguments name a device/PV worth highlighting on the
 # dashboard when the LLM calls them - {tool_name: argument_key}.
@@ -102,7 +105,7 @@ class ArgusMcpBridge:
         if self._streams_cm is not None:
             await self._streams_cm.__aexit__(None, None, None)
 
-    async def discover_tools(self, excluded_names: frozenset[str] = frozenset()) -> list[FunctionTool]:
+    async def discover_tools(self, excluded_names: frozenset[str] = frozenset(), gate: ActionGate | None = None) -> list[FunctionTool]:
         """List the server's tools and return only the allowlisted ones,
         wrapped as callable FunctionTools. Logs (does not raise on) every
         tool it skips, so a deploy that adds a new server-side tool is
@@ -113,7 +116,8 @@ class ArgusMcpBridge:
         listing = await self._session.list_tools()
         tools: list[FunctionTool] = []
         for tool in listing.tools:
-            if tool.name not in READ_ONLY_TOOLS:
+            gated = gate is not None and gate.can_act and tool.name in WRITE_TOOLS
+            if tool.name not in READ_ONLY_TOOLS and not gated:
                 logger.info(
                     "argus-mcp %s: NOT exposing non-allowlisted tool %r to the LLM",
                     self._server.name, tool.name,
@@ -126,11 +130,11 @@ class ArgusMcpBridge:
                     tool.name,
                 )
                 continue
-            tools.append(self._wrap_tool(tool.name, tool.description or "", tool.inputSchema or {"type": "object", "properties": {}}))
+            tools.append(self._wrap_tool(tool.name, tool.description or "", tool.inputSchema or {"type": "object", "properties": {}}, gate if gated else None))
         logger.info("argus-mcp %s: exposing %d/%d tools", self._server.name, len(tools), len(listing.tools))
         return tools
 
-    def _wrap_tool(self, name: str, description: str, input_schema: dict[str, Any]) -> FunctionTool:
+    def _wrap_tool(self, name: str, description: str, input_schema: dict[str, Any], gate: ActionGate | None = None) -> FunctionTool:
         # entrypoint() selects exactly one Argus MCP server for the current
         # LiveKit room before this bridge is created. Keep the server's native
         # tool name: model providers are substantially more reliable with
@@ -141,6 +145,13 @@ class ArgusMcpBridge:
         qualified_description = f"[{self._server.title or self._server.name}] {description}"
 
         async def _call(raw_arguments: dict[str, Any]) -> str:
+            if gate is not None:
+                # A write: the operator must confirm this exact call first.
+                async def _run(confirmed_args: dict[str, Any]) -> str:
+                    assert self._session is not None
+                    res = await self._session.call_tool(name, confirmed_args)
+                    return "\n".join(c.text for c in res.content if getattr(c, "text", None)) or "Azione eseguita."
+                return await gate.execute(name, raw_arguments, _run)
             assert self._session is not None
             result = await self._session.call_tool(name, raw_arguments)
             text = "\n".join(c.text for c in result.content if getattr(c, "text", None))

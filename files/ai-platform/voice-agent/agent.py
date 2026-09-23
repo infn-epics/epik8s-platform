@@ -74,7 +74,8 @@ from livekit.plugins import openai, silero
 from livekit.plugins.openai.tts import AUDIO_STREAM_MODELS as _OPENAI_AUDIO_STREAM_MODELS
 
 from argus_mcp_bridge import ArgusMcpBridge, ArgusMcpServerConfig
-from events import EVENT_TEXT_INPUT, send_error, send_phase, send_transcript
+from action_gate import ActionGate, namespace_from_url
+from events import EVENT_CONFIRM_ACTION, EVENT_TEXT_INPUT, send_confirm_request, send_error, send_phase, send_transcript
 from room_scope import RoomScopeError, select_server_for_room
 
 logging.basicConfig(level=logging.INFO)
@@ -442,8 +443,14 @@ async def entrypoint(ctx: JobContext) -> None:
     await ctx.connect()
 
     requested_model = LLM_MODEL
+    operator_identity = ""
+    can_act = False
     try:
         metadata = json.loads(getattr(ctx.job, "metadata", "") or "{}")
+        # Set by the token service from the operator's Keycloak token; a
+        # browser cannot put anything here.
+        operator_identity = str(metadata.get("operator_identity") or "")
+        can_act = metadata.get("can_act") is True and bool(operator_identity)
         candidate = metadata.get("llm_model")
         if isinstance(candidate, str) and candidate in LLM_ALLOWED_MODELS:
             requested_model = candidate
@@ -473,7 +480,20 @@ async def entrypoint(ctx: JobContext) -> None:
     bridge = ArgusMcpBridge(ctx.room, cfg)
     await bridge.connect()
     bridges.append(bridge)
-    argus_tools.extend(await bridge.discover_tools())
+
+    gate: ActionGate | None = None
+    if can_act:
+        async def _publish_request(action_id: str, label: str, device_id: str | None, timeout_ms: int) -> None:
+            await send_confirm_request(ctx.room, action_id, label, device_id, timeout_ms)
+
+        gate = ActionGate(
+            operator_identity=operator_identity,
+            can_act=True,
+            publish_request=_publish_request,
+            beamline_namespace=namespace_from_url(cfg.url),
+        )
+    logger.info("actions %s for operator %r", "ENABLED (operator-confirmed)" if gate else "disabled (read-only)", operator_identity or None)
+    argus_tools.extend(await bridge.discover_tools(gate=gate))
 
     async def _cleanup() -> None:
         for bridge in bridges:
@@ -487,6 +507,13 @@ async def entrypoint(ctx: JobContext) -> None:
         + f"\nQuesta sessione riguarda esclusivamente {beamline_title}. "
         + "Non rispondere con dati di altre beamline.\n"
     )
+    if gate:
+        scoped_prompt += (
+            "\nPuoi proporre azioni che modificano lo stato (set_pv, restart_ioc, execute_procedure, "
+            "create_logbook_entry) SOLO se l'operatore le chiede esplicitamente. Ogni azione richiede la "
+            "conferma dell'operatore nella dashboard: dopo averla proposta, attendi l'esito e riferiscilo. "
+            "Non ripetere un'azione annullata o scaduta senza una nuova richiesta.\n"
+        )
     agent = ArgusAgent(instructions=scoped_prompt, tools=argus_tools)
 
     llm_http_client = httpx.AsyncClient(proxy=LLM_HTTP_PROXY) if LLM_HTTP_PROXY else None
@@ -522,6 +549,10 @@ async def entrypoint(ctx: JobContext) -> None:
         except (AttributeError, UnicodeDecodeError, json.JSONDecodeError):
             return
 
+        if payload.get("type") == EVENT_CONFIRM_ACTION and gate is not None:
+            sender = getattr(getattr(data_packet, "participant", None), "identity", None)
+            gate.on_confirm(payload.get("action_id"), payload.get("confirmed"), sender)
+            return
         if payload.get("type") != EVENT_TEXT_INPUT:
             return
         raw_text = payload.get("text")

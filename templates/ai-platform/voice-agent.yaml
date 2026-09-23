@@ -38,6 +38,8 @@ data:
 {{ .Files.Get "files/ai-platform/voice-agent/argus_content.py" | indent 4 }}
   events.py: |
 {{ .Files.Get "files/ai-platform/voice-agent/events.py" | indent 4 }}
+  action_gate.py: |
+{{ .Files.Get "files/ai-platform/voice-agent/action_gate.py" | indent 4 }}
   room_scope.py: |
 {{ .Files.Get "files/ai-platform/voice-agent/room_scope.py" | indent 4 }}
 ---

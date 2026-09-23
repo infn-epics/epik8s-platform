@@ -50,7 +50,7 @@ class DispatchDedupeTests(unittest.TestCase):
         self.calls = []
         self.fail_next = False
 
-        async def fake_dispatch(room, model):
+        async def fake_dispatch(room, model, operator=None):
             if self.fail_next:
                 self.fail_next = False
                 raise RuntimeError("livekit unreachable")

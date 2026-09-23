@@ -150,11 +150,11 @@ async def _remove_existing_agents(client, room: str) -> None:
         logger.exception("could not evict stale agents from room %r", room)
 
 
-async def _dispatch_agent(room: str, model: str) -> None:
+async def _dispatch_agent(room: str, model: str, operator: dict | None = None) -> None:
     async with lkapi.LiveKitAPI(url=LIVEKIT_URL, api_key=API_KEY, api_secret=API_SECRET) as client:
         await _remove_existing_agents(client, room)
         await client.agent_dispatch.create_dispatch(
-            CreateAgentDispatchRequest(room=room, agent_name=AGENT_NAME, metadata=json.dumps({"llm_model": model}))
+            CreateAgentDispatchRequest(room=room, agent_name=AGENT_NAME, metadata=json.dumps({"llm_model": model, **(operator or {})}))
         )
 
 
@@ -177,7 +177,7 @@ _recent_dispatch: dict[tuple[str, str], float] = {}
 _recent_dispatch_lock = threading.Lock()
 
 
-def dispatch_agent(room: str, model: str) -> None:
+def dispatch_agent(room: str, model: str, operator: dict | None = None) -> None:
     key = (room, model)
     with _recent_dispatch_lock:
         last = _recent_dispatch.get(key)
@@ -196,7 +196,7 @@ def dispatch_agent(room: str, model: str) -> None:
     # and is still useful (e.g. reviewing past highlights); log loudly
     # instead so it's visible without breaking the client's connect flow.
     try:
-        asyncio.run(_dispatch_agent(room, model))
+        asyncio.run(_dispatch_agent(room, model, operator))
     except Exception:
         with _recent_dispatch_lock:
             # A failed dispatch must not block the client's retry.
@@ -299,7 +299,16 @@ class Handler(BaseHTTPRequestHandler):
             # first instead of adding a participant.
             identity = f"operator-{room.rsplit(OPERATOR_ROOM_SEP, 1)[-1]}"
 
-        dispatch_agent(room, model)
+        operator = None
+        if claims is not None:
+            # Trusted metadata for the agent: who this room belongs to, and
+            # whether they may have ARGUS actions (confirmed one by one).
+            roles = claims.get("roles") if isinstance(claims.get("roles"), list) else []
+            operator = {
+                "operator_identity": identity,
+                "can_act": "argus.actions" in roles or "platform.admin" in roles,
+            }
+        dispatch_agent(room, model, operator)
         self._send_json(200, {"token": mint_token(room, identity), "room": room})
 
 
