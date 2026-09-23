@@ -1013,6 +1013,20 @@ aiPlatform:
           default: ["qwen36-27b"]
           fetch: false
         modelDisplayLabel: "AI-Gateway-WP6"
+        ## tokenConfig is a SEPARATE mechanism from modelSpecs.list[].preset.
+        ## maxContextTokens below - that one only controls when LibreChat's
+        ## own history summarization triggers; this one is what the UI
+        ## actually reads to display each model's context-window size
+        ## (confirmed live: setting only the preset left the UI still
+        ## showing LibreChat's ~32k system_default). prompt/completion are
+        ## required by LibreChat's schema (billing rate fields) - 0 here
+        ## since this is free internal GPU compute, not billed per token.
+        ## See modelSpecs below for how each "context" value was verified.
+        tokenConfig:
+          qwen36-27b:
+            context: 128000
+            prompt: 0
+            completion: 0
       - name: "AI-Gateway-90"
         apiKeySecretKey: "AIGW_90_API_KEY"
         baseURL: "https://ai-gateway.131.154.99.90.myip.cloud.infn.it/v1"
@@ -1020,6 +1034,27 @@ aiPlatform:
           default: ["minimax-m27","qwen36-27b-x2","qwen36-27b", "gemma-4-31b-it", "qwen35-122b-a10b-gptq-int4"]
           fetch: true
         modelDisplayLabel: "AI-Gateway-90"
+        tokenConfig:
+          minimax-m27:
+            context: 204800
+            prompt: 0
+            completion: 0
+          qwen36-27b:
+            context: 262144
+            prompt: 0
+            completion: 0
+          qwen36-27b-x2:
+            context: 262144
+            prompt: 0
+            completion: 0
+          gemma-4-31b-it:
+            context: 40960
+            prompt: 0
+            completion: 0
+          qwen35-122b-a10b-gptq-int4:
+            context: 262144
+            prompt: 0
+            completion: 0
       ## Verified 2026-09-03 from inside the cluster: llama.cpp OpenAI API,
       ## with Qwen 3.8 27B loaded on port 8081 - no real key needed. Does NOT
       ## reuse the empty STT_API_KEY placeholder (tried that - LibreChat's own
@@ -1037,6 +1072,11 @@ aiPlatform:
           default: ["/home/rgargana/models/Qwen3.8-27B-Q4_K_M.gguf"]
           fetch: true
         modelDisplayLabel: "Marconi C1002 (Qwen 3.8 27B)"
+        tokenConfig:
+          "/home/rgargana/models/Qwen3.8-27B-Q4_K_M.gguf":
+            context: 262144
+            prompt: 0
+            completion: 0
     ## New conversations open on AI-Gateway-90 / minimax-m27 by default.
     ##
     ## maxContextTokens per model below: LibreChat has no config knob for its
