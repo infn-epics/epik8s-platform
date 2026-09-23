@@ -1,0 +1,202 @@
+## EPIK8s Keycloak realm - authentication + RBAC for epik8s-dashboard and the
+## services behind it (ARGUS voice token service, ARGUS MCP, ...).
+##
+## Kept as commented YAML so role changes are reviewable in git; the chart runs
+## it through tpl (hostnames/beamlines come from values) and renders it to the
+## JSON Keycloak's `--import-realm` expects. Keycloak imports it ONCE, when the
+## realm does not exist yet; it never overwrites an existing realm. To apply a
+## later change either edit the running realm (admin console / kcadm) or delete
+## the realm and let the next start re-import - see README.md "Authentication".
+##
+## RBAC MODEL
+##   1. Level roles (composite): epik8s-viewer < operator < expert < admin.
+##      Each higher level includes everything below it.
+##   2. Capability roles (pv.write, argus.use, ...): what a service should
+##      actually check. Levels are just bundles of these, so a policy can be
+##      loosened or tightened here without touching any service.
+##   3. Beamline membership = group (btf / sparc / euaps), emitted as the
+##      `beamlines` claim. A role applies on the beamlines you belong to:
+##      a service authorises   capability role  AND  beamline in `beamlines`.
+##   Nothing is granted implicitly: an authenticated user with no role (or no
+##   beamline) must be refused by services (deny by default).
+realm: epik8s
+displayName: EPIK8s
+enabled: true
+
+sslRequired: external
+registrationAllowed: false
+resetPasswordAllowed: true
+rememberMe: false
+loginWithEmailAllowed: true
+duplicateEmailsAllowed: false
+editUsernameAllowed: false
+
+bruteForceProtected: true
+failureFactor: 5
+maxFailureWaitSeconds: 900
+permanentLockout: false
+## Strong by default; a test site may relax it via auth.keycloak.passwordPolicy.
+passwordPolicy: {{ .Values.auth.keycloak.passwordPolicy | quote }}
+
+## Short-lived access tokens; the session (SSO) covers a control-room shift.
+accessTokenLifespan: 300
+ssoSessionIdleTimeout: 7200
+ssoSessionMaxLifespan: 43200
+
+## Audit trail: who logged in, from where, and admin changes.
+eventsEnabled: true
+adminEventsEnabled: true
+adminEventsDetailsEnabled: true
+eventsListeners: [jboss-logging]
+
+internationalizationEnabled: true
+supportedLocales: [en, it]
+defaultLocale: en
+
+roles:
+  realm:
+    ## ---- capability roles -------------------------------------------------
+    - name: pv.read
+      description: Read live PV values, archiver history and alarms.
+    - name: pv.write
+      description: Write (set) PV values. Operators do this in normal operation.
+    - name: logbook.read
+      description: Read the electronic logbook (Olog).
+    - name: logbook.write
+      description: Create logbook entries.
+    - name: argus.use
+      description: Use the ARGUS voice/chat assistant (read-only tools).
+    - name: argus.actions
+      description: Confirm state-changing actions proposed by ARGUS (PV writes, IOC restart, procedures).
+    - name: procedure.run
+      description: Run approved operating procedures.
+    - name: config.edit
+      description: Edit beamline configuration - save-and-restore, procedures, alarm configuration.
+    - name: ioc.control
+      description: Start/stop/restart IOCs and other beamline services.
+    - name: platform.admin
+      description: Platform administration - user/role management in the apps and cluster tooling.
+
+    ## ---- level roles (composite bundles of the above) ---------------------
+    - name: epik8s-viewer
+      description: Read-only - monitoring and logbook.
+      composite: true
+      composites:
+        realm: [pv.read, logbook.read]
+    - name: epik8s-operator
+      description: Control-room operator - normal operation plus the ARGUS assistant.
+      composite: true
+      composites:
+        realm: [epik8s-viewer, pv.write, logbook.write, argus.use, procedure.run]
+    - name: epik8s-expert
+      description: Beamline expert - operator plus configuration and IOC control, and ARGUS actions.
+      composite: true
+      composites:
+        realm: [epik8s-operator, config.edit, ioc.control, argus.actions]
+    - name: epik8s-admin
+      description: Platform administrator - everything.
+      composite: true
+      composites:
+        realm: [epik8s-expert, platform.admin]
+
+## Beamline membership. Group names are the beamline identifiers used across the
+## platform (namespace, LiveKit room prefix, ...).
+groups:
+{{- range .Values.auth.keycloak.beamlines }}
+  - name: {{ . }}
+    path: /{{ . }}
+    attributes:
+      beamline: [{{ . }}]
+{{- end }}
+
+clients:
+  ## The single-page dashboard. Public client: Authorization Code + PKCE only,
+  ## no secret in the browser, no password grant.
+  - clientId: epik8s-dashboard
+    name: EPIK8s dashboard
+    description: epik8s-dashboard (browser SPA) - Authorization Code with PKCE.
+    enabled: true
+    protocol: openid-connect
+    publicClient: true
+    standardFlowEnabled: true
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    redirectUris:
+{{- range .Values.auth.keycloak.dashboardHosts }}
+      - "https://{{ . }}/*"
+{{- end }}
+{{- range .Values.auth.keycloak.devRedirectUris }}
+      - "{{ . }}"
+{{- end }}
+    webOrigins: ["+"]
+    attributes:
+      pkce.code.challenge.method: S256
+      post.logout.redirect.uris: "+"
+    defaultClientScopes: [web-origins, acr, profile, roles, email, basic]
+    optionalClientScopes: [address, phone, offline_access, microprofile-jwt]
+    protocolMappers: &epik8sMappers
+      ## Backend services validate aud == epik8s-services.
+      - name: epik8s-services-audience
+        protocol: openid-connect
+        protocolMapper: oidc-audience-mapper
+        config:
+          included.client.audience: epik8s-services
+          id.token.claim: "false"
+          access.token.claim: "true"
+          introspection.token.claim: "true"
+      ## beamlines: ["btf", "sparc"] - the user's beamline groups.
+      - name: beamlines
+        protocol: openid-connect
+        protocolMapper: oidc-group-membership-mapper
+        config:
+          claim.name: beamlines
+          full.path: "false"
+          id.token.claim: "true"
+          access.token.claim: "true"
+          userinfo.token.claim: "true"
+          introspection.token.claim: "true"
+      ## roles: [...] - flat list of effective realm roles (composites expanded),
+      ## simpler for services than realm_access.roles (which is also present).
+      - name: roles-flat
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-realm-role-mapper
+        config:
+          claim.name: roles
+          multivalued: "true"
+          jsonType.label: String
+          id.token.claim: "true"
+          access.token.claim: "true"
+          userinfo.token.claim: "true"
+          introspection.token.claim: "true"
+
+  ## Audience only: the "resource" that tokens are issued for. Never used to log in.
+  - clientId: epik8s-services
+    name: EPIK8s backend services
+    description: Audience for access tokens; services (voice token, ARGUS, ...) require aud=epik8s-services.
+    enabled: true
+    protocol: openid-connect
+    bearerOnly: true
+    publicClient: false
+    standardFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+
+  ## TEST ONLY. Lets a script obtain a token for a test user with the password
+  ## grant, to inspect roles/claims without a browser. Delete this client (or
+  ## do not import it) in the production realm.
+  - clientId: epik8s-test-cli
+    name: EPIK8s test CLI (test only)
+    description: TEST ONLY - password grant for scripted token inspection. Remove before production.
+    enabled: true
+    protocol: openid-connect
+    publicClient: true
+    standardFlowEnabled: false
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: true
+    serviceAccountsEnabled: false
+    attributes:
+      epik8s.purpose: "test-only"
+    defaultClientScopes: [web-origins, acr, profile, roles, email, basic]
+    optionalClientScopes: [address, phone, offline_access, microprofile-jwt]
+    protocolMappers: *epik8sMappers

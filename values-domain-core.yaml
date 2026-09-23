@@ -37,3 +37,7 @@ langfuse:
 
 aiPlatform:
   enabled: false
+
+auth:
+  keycloak:
+    enabled: false

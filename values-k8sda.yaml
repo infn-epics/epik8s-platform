@@ -792,6 +792,28 @@ langfuse:
         enabled: true
         secretName: langfuse-tls
 
+## Keycloak: authentication + RBAC to replace the dashboard's Git-token login.
+## TEST deployment for now (single replica, node-local storage) - see
+## README.md "Authentication (Keycloak)". The test-only client and users are
+## created out of band, never in this file.
+auth:
+  keycloak:
+    enabled: true
+    hostname: keycloak.k8sda.lnf.infn.it
+    ## TEST site: no password policy, by the owner's choice (simple test
+    ## passwords). Restore the default before production - README.md
+    ## "Authentication (Keycloak)".
+    passwordPolicy: ""
+    beamlines: [btf, sparc, euaps]
+    dashboardHosts:
+      - btf-dashboard.k8sda.lnf.infn.it
+      - sparc-dashboard.k8sda.lnf.infn.it
+      - euaps-dashboard.k8sda.lnf.infn.it
+    ## vite dev / vite preview, for testing a dashboard build locally.
+    devRedirectUris:
+      - http://localhost:5173/*
+      - http://localhost:4173/*
+
 aiPlatform:
   enabled: true
   namespace: ai-platform

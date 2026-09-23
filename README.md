@@ -443,6 +443,125 @@ an acceptable tradeoff. `argus-mcp-server`'s header-extraction code
 just never finds these headers now, since nothing sends them. Revisit only
 if LibreChat adds a way to make body-scoped placeholders optional.
 
+## Authentication (Keycloak)
+
+`auth.keycloak` deploys [Keycloak](https://www.keycloak.org/) with its own
+PostgreSQL in the `keycloak` namespace, to replace the dashboard's Git-token
+login with OpenID Connect and to give the services behind it (ARGUS voice token
+service, ARGUS MCP, ...) real roles to authorise against. **This is a test
+deployment**: one Keycloak replica, one PostgreSQL replica on node-local
+storage. Templates: `templates/auth/keycloak.yaml`; realm:
+`files/keycloak/epik8s-realm.yaml` (commented YAML, rendered to the JSON
+Keycloak imports). Issuer: `https://keycloak.k8sda.lnf.infn.it/realms/epik8s`.
+
+### RBAC model
+
+Three layers, so a policy can change here without touching any service:
+
+1. **Level roles** (composite): `epik8s-viewer` < `epik8s-operator` <
+   `epik8s-expert` < `epik8s-admin`. Each level includes everything below it.
+2. **Capability roles** - what a service should actually check:
+
+   | capability | viewer | operator | expert | admin |
+   |---|:-:|:-:|:-:|:-:|
+   | `pv.read`, `logbook.read` | x | x | x | x |
+   | `pv.write`, `logbook.write`, `argus.use`, `procedure.run` | | x | x | x |
+   | `config.edit`, `ioc.control`, `argus.actions` | | | x | x |
+   | `platform.admin` | | | | x |
+
+   `argus.use` is the read-only ARGUS assistant; `argus.actions` is confirming
+   the state-changing actions it proposes.
+3. **Beamline membership = group** (`btf`, `sparc`, `euaps`), emitted as the
+   `beamlines` claim. A role applies on the beamlines you belong to.
+
+**Rule for services: authorise `capability role` AND `beamline in beamlines`,
+and refuse everything else** - an authenticated user with no role or no
+beamline gets nothing (deny by default; the `norole.btf` test user exists to
+prove that).
+
+Access tokens carry `roles` (flat, effective, composites expanded),
+`realm_access.roles`, `beamlines`, and `aud` = `epik8s-services`, and live 300 s
+(the SSO session covers a shift: 2 h idle / 12 h max).
+
+### Clients
+
+| client | purpose |
+|---|---|
+| `epik8s-dashboard` | the SPA. Public client, **Authorization Code + PKCE (S256) only**, no password grant. Redirects: the three dashboards' `https://<host>/*` plus the `devRedirectUris` (vite dev/preview) |
+| `epik8s-services` | audience only (bearer-only); services require `aud=epik8s-services` |
+| `epik8s-test-cli` | **test only** - password grant, so a script can inspect a token without a browser. Remove before production |
+
+### Deploying / operating
+
+Credentials are never in git. Provision them once, out of band:
+
+```bash
+kubectl create namespace keycloak
+kubectl -n keycloak create secret generic keycloak-admin \
+  --from-literal=username=kcadmin --from-literal=password="$(openssl rand -base64 36 | tr -d '/+=\n' | cut -c1-28)"
+kubectl -n keycloak create secret generic keycloak-db \
+  --from-literal=password="$(openssl rand -base64 36 | tr -d '/+=\n' | cut -c1-28)"
+
+helm template epik8s-platform . -f values-k8sda.yaml -f values-domain-auth.yaml \
+  --show-only templates/auth/keycloak.yaml | kubectl apply -f -
+
+docs/keycloak/create-test-users.sh     # 6 test users; passwords only in secret/keycloak-test-users
+kubectl -n keycloak get secret keycloak-admin -o jsonpath='{.data.password}' | base64 -d   # admin console
+```
+
+The **realm is imported once**, when it does not exist yet (`--import-realm`,
+strategy IGNORE_EXISTING); a later change to `epik8s-realm.yaml` does *not*
+touch a running realm. Apply it through the admin console / `kcadm`, or on a
+test instance delete the realm and restart the pod to re-import.
+
+**TLS**: ingress-nginx runs with `--default-ssl-certificate=kube-system/
+k8sda-wildcard-tls`, a GEANT `*.k8sda.lnf.infn.it` wildcard, so Keycloak's
+ingress deliberately has no cert-manager annotation and no secret. cert-manager
+/ Let's Encrypt HTTP-01 cannot work on this domain (the names resolve to the
+private `192.168.108.10`, which Let's Encrypt refuses); the existing
+`Certificate` objects for argocd, langfuse, grafana and the kubernetes
+dashboard sit `Ready=False` for the same reason and are harmless, but retry
+forever.
+
+### Verified
+
+Against the public HTTPS endpoint with strict TLS: discovery and JWKS served;
+health/metrics not exposed; for each of the six test users the token carries
+exactly the roles and beamlines above and none it should not have; the
+dashboard client serves the login page for its three real redirect URIs and the
+dev origin, and refuses a missing PKCE challenge, an unknown redirect host and
+a wrong scheme; the password grant is refused on the dashboard client.
+
+### Before production
+
+- Replicated PostgreSQL (or an external managed one), Keycloak clustering, and
+  backups (`pg_dump`); node-local storage does not survive a node loss.
+- The admin console is reachable wherever the ingress is - restrict it (ingress
+  allow-list, or port-forward only).
+- Delete `epik8s-test-cli` and the test users.
+- **Passwords and policy.** On k8sda the realm password policy is deliberately off
+  (`auth.keycloak.passwordPolicy: ""` in `values-k8sda.yaml`) so the admin and the
+  test users can have simple test passwords. That is only acceptable for this test
+  instance: restore the default policy (`length(12) and notUsername`) and rotate
+  the admin and all test passwords before it is used for anything real. The
+  policy is applied at import time only - on a running realm change it in the
+  admin console or with `kcadm update realms/epik8s`.
+- Federate the corporate identity: add INFN AAI
+  (`https://idp-test.app.infn.it/auth/realms/aai`) as an identity provider and
+  map its users to these roles/groups, so people are not managed twice.
+- SMTP for password reset, and review the token/session lifetimes.
+
+### Replacing the dashboard's Git-token login
+
+Not done by this install. Note the Git token currently does **two jobs**:
+identity/role, *and* the credential the browser uses against the Git API (file
+browser, save-and-restore, configuration commits). Replacing it means the
+dashboard logs in with Keycloak and those Git operations move behind the
+dashboard backend (`epik8s-dashboard-backend`), which validates the Keycloak
+token, authorises by capability role, and holds the Git credential itself. The
+ARGUS voice token service would validate the same token and derive the
+operator's identity and per-operator room from it.
+
 ## What's a pre-existing oddity, reproduced not fixed
 
 Per the compatibility mandate, known inconsistencies on the live cluster are

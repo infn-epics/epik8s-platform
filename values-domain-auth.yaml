@@ -1,15 +1,9 @@
-## Domain overlay: monitoring services only (Grafana + Prometheus stack).
+## Domain overlay: authentication (Keycloak) only.
 ## Use together with values-k8sda.yaml.
 
 platformBootstrap:
   argocd:
     enabled: false
-
-monitoring:
-  kubePrometheusStack:
-    enabled: true
-  grafana:
-    enabled: true
 
 networking:
   enabled: false
@@ -23,11 +17,19 @@ sysctlTuning:
 clusterBackup:
   enabled: false
 
+monitoring:
+  kubePrometheusStack:
+    enabled: false
+  grafana:
+    enabled: false
+
 backend:
   enabled: false
   eckOperator:
     enabled: false
   strimziOperator:
+    enabled: false
+  kibana:
     enabled: false
 
 logging:
@@ -44,4 +46,4 @@ aiPlatform:
 
 auth:
   keycloak:
-    enabled: false
+    enabled: true

@@ -1,0 +1,269 @@
+{{- /*
+Keycloak (authentication + RBAC for epik8s-dashboard and the services behind
+it) with its own PostgreSQL, in a dedicated namespace. See README.md
+"Authentication (Keycloak)" for the realm/role model and how to operate it.
+
+Credentials are NEVER in git: the admin and DB passwords are read from Secrets
+provisioned out of band (auth.keycloak.adminSecretName / db.secretName), the
+same pattern as langfuse-secrets and argus-librechat-credentials.
+
+Single replica on purpose: this is the test deployment. Production wants a
+replicated database and Keycloak clustering (see the README).
+*/ -}}
+{{- if .Values.auth.keycloak.enabled }}
+{{- $k := .Values.auth.keycloak }}
+{{- $host := required "auth.keycloak.hostname is required when auth.keycloak.enabled" $k.hostname }}
+{{- $ns := $k.namespace }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $ns }}
+  labels:
+    app.kubernetes.io/part-of: epik8s-platform
+    deploy: auth
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm
+  namespace: {{ $ns }}
+  labels:
+    app: keycloak
+    deploy: auth
+data:
+  epik8s-realm.json: |
+{{ tpl (.Files.Get "files/keycloak/epik8s-realm.yaml") . | fromYaml | toPrettyJson | indent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-postgres
+  namespace: {{ $ns }}
+  labels:
+    app: keycloak-postgres
+    deploy: auth
+spec:
+  clusterIP: None
+  selector:
+    app: keycloak-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: keycloak-postgres
+  namespace: {{ $ns }}
+  labels:
+    app: keycloak-postgres
+    deploy: auth
+spec:
+  serviceName: keycloak-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak-postgres
+  template:
+    metadata:
+      labels:
+        app: keycloak-postgres
+        deploy: auth
+    spec:
+      containers:
+        - name: postgres
+          image: {{ $k.db.image }}
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: keycloak
+            - name: POSTGRES_USER
+              value: keycloak
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $k.db.secretName }}
+                  key: password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U keycloak -d keycloak"]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U keycloak -d keycloak"]
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            {{- toYaml $k.db.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with $k.db.storageClassName }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $k.db.storage }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: {{ $ns }}
+  labels:
+    app: keycloak
+    deploy: auth
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+        deploy: auth
+    spec:
+      containers:
+        - name: keycloak
+          image: {{ $k.image }}
+          args: ["start", "--import-realm"]
+          env:
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $k.adminSecretName }}
+                  key: username
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $k.adminSecretName }}
+                  key: password
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL_HOST
+              value: keycloak-postgres
+            - name: KC_DB_URL_DATABASE
+              value: keycloak
+            - name: KC_DB_USERNAME
+              value: keycloak
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $k.db.secretName }}
+                  key: password
+            ## TLS terminates at the nginx ingress; Keycloak trusts its
+            ## X-Forwarded-* headers and advertises this public URL as the
+            ## issuer, so it must match what clients and services are given.
+            - name: KC_HOSTNAME
+              value: https://{{ $host }}
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_PROXY_HEADERS
+              value: xforwarded
+            ## Health/metrics are served on the separate management port
+            ## (9000), which the Service does not expose - only the probes
+            ## reach it.
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            - name: KC_METRICS_ENABLED
+              value: "true"
+            - name: JAVA_OPTS_APPEND
+              value: "-XX:MaxRAMPercentage=70"
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 9000
+          ## Non-optimized `start` builds at boot, so the first start is slow.
+          startupProbe:
+            httpGet:
+              path: /health/started
+              port: management
+            periodSeconds: 5
+            failureThreshold: 90
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: management
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: management
+            periodSeconds: 15
+          resources:
+            {{- toYaml $k.resources | nindent 12 }}
+          volumeMounts:
+            - name: realm
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+      volumes:
+        - name: realm
+          configMap:
+            name: keycloak-realm
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: {{ $ns }}
+  labels:
+    app: keycloak
+    deploy: auth
+spec:
+  selector:
+    app: keycloak
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: keycloak
+  namespace: {{ $ns }}
+  labels:
+    app: keycloak
+    deploy: auth
+  annotations:
+    {{- with $k.ingress.clusterIssuer }}
+    cert-manager.io/cluster-issuer: {{ . }}
+    {{- end }}
+    ## Keycloak sets large cookies/headers; nginx's default buffer is too small.
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+spec:
+  ingressClassName: {{ $k.ingress.className }}
+  ## With no tlsSecretName, nginx serves its default certificate - on k8sda
+  ## that is the GEANT wildcard (--default-ssl-certificate).
+  tls:
+    - hosts:
+        - {{ $host }}
+      {{- with $k.ingress.tlsSecretName }}
+      secretName: {{ . }}
+      {{- end }}
+  rules:
+    - host: {{ $host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port:
+                  name: http
+{{- end }}

@@ -122,6 +122,48 @@ clusterBackup:
 langfuse:
   enabled: true
 
+## Authentication + RBAC for epik8s-dashboard and the services behind it
+## (Keycloak + PostgreSQL). Off by default: opt in per site. The realm - roles,
+## clients, beamline groups - is files/keycloak/epik8s-realm.yaml; see
+## README.md "Authentication (Keycloak)".
+auth:
+  keycloak:
+    enabled: false
+    namespace: keycloak
+    image: quay.io/keycloak/keycloak:26.7.4
+    hostname: ""              # required when enabled, e.g. keycloak.k8sda.lnf.infn.it
+    ## TLS: leave clusterIssuer/tlsSecretName empty to serve nginx's default
+    ## certificate (a wildcard on k8sda). Set both to have cert-manager issue
+    ## one - only works where the hostname resolves to a publicly routable IP
+    ## (Let's Encrypt HTTP-01 rejects private addresses).
+    ingress:
+      className: nginx
+      clusterIssuer: ""
+      tlsSecretName: ""
+    ## Secrets provisioned out of band, never in git:
+    ##   adminSecretName -> keys: username, password  (bootstrap admin)
+    ##   db.secretName   -> key:  password            (PostgreSQL)
+    adminSecretName: keycloak-admin
+    resources:
+      requests: { cpu: 500m, memory: 1Gi }
+      limits: { cpu: "2", memory: 2Gi }
+    db:
+      image: postgres:16-alpine
+      secretName: keycloak-db
+      storage: 5Gi
+      storageClassName: ""    # empty = cluster default
+      resources:
+        requests: { cpu: 100m, memory: 256Mi }
+        limits: { cpu: "1", memory: 512Mi }
+    ## Realm password policy (Keycloak syntax). Strong by default.
+    passwordPolicy: "length(12) and notUsername"
+    ## Beamline groups created in the realm; the `beamlines` token claim.
+    beamlines: []
+    ## Dashboard hostnames allowed as OIDC redirect targets (https://<host>/*).
+    dashboardHosts: []
+    ## Extra redirect URIs for local development/testing only.
+    devRedirectUris: []
+
 ## kube-prometheus-stack subchart values (dependency name: kube-prometheus-stack)
 kube-prometheus-stack: {}
 
