@@ -1021,10 +1021,17 @@ aiPlatform:
           fetch: true
         modelDisplayLabel: "AI-Gateway-90"
       ## Verified 2026-09-03 from inside the cluster: llama.cpp OpenAI API,
-      ## with Qwen 3.8 27B loaded on port 8081. The server does not require
-      ## authentication; reuse the existing EMPTY speech key placeholder.
+      ## with Qwen 3.8 27B loaded on port 8081 - no real key needed. Does NOT
+      ## reuse the empty STT_API_KEY placeholder (tried that - LibreChat's own
+      ## extractEnvVariable() does `process.env[var] || placeholder`, so an
+      ## EMPTY env var value is treated as *unresolved*, not "resolved to
+      ## nothing" - confirmed live, it hard-failed every chat turn with
+      ## "Missing API Key for Marconi C1002" even though llama.cpp itself
+      ## never checks the key). MARCONI_API_KEY is a dedicated secret key,
+      ## any non-empty placeholder value works - see secrets.data below /
+      ## README.md "Observability: Langfuse" for the out-of-band pattern.
       - name: "Marconi C1002"
-        apiKeySecretKey: "STT_API_KEY"
+        apiKeySecretKey: "MARCONI_API_KEY"
         baseURL: "http://marconicento002.lnf.infn.it:8081/v1"
         models:
           default: ["/home/rgargana/models/Qwen3.8-27B-Q4_K_M.gguf"]
