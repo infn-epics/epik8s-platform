@@ -21,6 +21,8 @@ def load_token_server():
     sys.modules.setdefault("jwt", types.ModuleType("jwt"))
     livekit = types.ModuleType("livekit")
     livekit.api = types.ModuleType("livekit.api")
+    livekit.api.ListParticipantsRequest = lambda room: types.SimpleNamespace(room=room)
+    livekit.api.RoomParticipantIdentity = lambda room, identity: types.SimpleNamespace(room=room, identity=identity)
     protocol = types.ModuleType("livekit.protocol")
     dispatch = types.ModuleType("livekit.protocol.agent_dispatch")
     dispatch.CreateAgentDispatchRequest = object
@@ -110,3 +112,28 @@ class DispatchDedupeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EvictStaleAgentsTests(unittest.IsolatedAsyncioTestCase):
+    async def test_only_agents_are_evicted_humans_stay(self):
+        P = lambda identity, kind: types.SimpleNamespace(identity=identity, kind=kind)
+        removed = []
+
+        class Room:
+            async def list_participants(self, req):
+                return types.SimpleNamespace(participants=[
+                    P("operator-a", 0), P("agent-1", 4), P("operator-b", 0), P("agent-2", 4)])
+
+            async def remove_participant(self, req):
+                removed.append((req.room, req.identity))
+
+        client = types.SimpleNamespace(room=Room())
+        await server._remove_existing_agents(client, "btf-argus-control-room")
+        self.assertEqual(removed, [("btf-argus-control-room", "agent-1"), ("btf-argus-control-room", "agent-2")])
+
+    async def test_livekit_failure_does_not_raise(self):
+        class Room:
+            async def list_participants(self, req):
+                raise RuntimeError("down")
+
+        await server._remove_existing_agents(types.SimpleNamespace(room=Room()), "r")

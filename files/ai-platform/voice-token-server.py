@@ -71,8 +71,38 @@ DEFAULT_MODEL = os.environ.get("VOICE_DEFAULT_MODEL", "")
 AGENT_NAME = "argus-voice-agent"
 
 
+# ParticipantInfo.Kind.AGENT in the LiveKit protocol.
+PARTICIPANT_KIND_AGENT = 4
+
+
+def agent_identities(participants) -> list[str]:
+    """Identities of the AI agents currently in a room (humans are excluded)."""
+    return [p.identity for p in participants if getattr(p, "kind", None) == PARTICIPANT_KIND_AGENT]
+
+
+async def _remove_existing_agents(client, room: str) -> None:
+    """Evict every agent already in the room before dispatching a fresh one.
+
+    Each tab load dispatches an agent, and the agents of closed/reloaded tabs
+    linger as room participants (a room outlives its participants for
+    emptyTimeout). They pile up: every extra agent answers every message, and
+    LiveKit ends up with no free worker slot ("no worker is available"), after
+    which nobody answers at all. Keeping exactly one agent per room - the one
+    dispatched right now - makes any number of tabs safe and self-heals a
+    room that is already polluted. Best effort: a failure here must not stop
+    the dispatch itself.
+    """
+    try:
+        resp = await client.room.list_participants(lkapi.ListParticipantsRequest(room=room))
+        for identity in agent_identities(resp.participants):
+            await client.room.remove_participant(lkapi.RoomParticipantIdentity(room=room, identity=identity))
+    except Exception:
+        logger.exception("could not evict stale agents from room %r", room)
+
+
 async def _dispatch_agent(room: str, model: str) -> None:
     async with lkapi.LiveKitAPI(url=LIVEKIT_URL, api_key=API_KEY, api_secret=API_SECRET) as client:
+        await _remove_existing_agents(client, room)
         await client.agent_dispatch.create_dispatch(
             CreateAgentDispatchRequest(room=room, agent_name=AGENT_NAME, metadata=json.dumps({"llm_model": model}))
         )
