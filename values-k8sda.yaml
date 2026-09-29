@@ -493,25 +493,57 @@ kube-prometheus-stack:
     enabled: true
     alertmanagerSpec:
       replicas: 1
+    ## smtp.lnf.infn.it accepts at most 500 recipients/day from the cluster's
+    ## egress IP ("554 5.7.1 only 500 recipients per day"); past that every
+    ## alert is dropped, backups included. Measured ~1000 sends/day with the
+    ## old per-pod grouping, 5m group_interval and 12h repeat, so the route
+    ## below is shaped to stay well under that budget.
     config:
       global:
         resolve_timeout: 5m
         smtp_smarthost: smtp.lnf.infn.it:25
-        smtp_from: k8sda-alerts@lnf.infn.it
+        ## the sender the relay actually accepts (was only set in the ArgoCD
+        ## Application's inline values, which overrode this file)
+        smtp_from: alerts@lnf.infn.it
       route:
         receiver: platform-email
-        group_by: [alertname, namespace, pod]
+        ## one mail thread per alert type per namespace, not per pod
+        group_by: [alertname, namespace]
         group_wait: 30s
-        group_interval: 5m
-        repeat_interval: 12h
+        group_interval: 30m
+        repeat_interval: 24h
+        routes:
+          - receiver: "null"
+            matchers:
+              - alertname = "Watchdog"
+          - receiver: "null"
+            matchers:
+              - severity = "info"
+          ## backup alerts stay separate and more insistent: one thread per
+          ## CronJob, reminded every 12h until fixed
+          - receiver: platform-email
+            matchers:
+              - component = "backup"
+            group_by: [alertname, namespace, cronjob, job_name]
+            group_interval: 5m
+            repeat_interval: 12h
       receivers:
         - name: "null"
         - name: platform-email
           email_configs:
-            - to: andrea.michelotti@lnf.infn.it
+            ## one message to both recipients instead of one per address
+            - to: andrea.michelotti@lnf.infn.it, riccardo.gargana@lnf.infn.it
               send_resolved: true
-            - to: riccardo.gargana@lnf.infn.it
-              send_resolved: true
+  ## RKE2 binds kube-scheduler, kube-controller-manager and kube-proxy metrics
+  ## to 127.0.0.1, so these targets are unreachable by design: they only ever
+  ## produced permanent TargetDown/Kube*Down alerts (firing since 2026-03).
+  ## Disabling drops both the scrape targets and their alert rules.
+  kubeControllerManager:
+    enabled: false
+  kubeScheduler:
+    enabled: false
+  kubeProxy:
+    enabled: false
   grafana:
     enabled: false ## grafana is deployed as its own separate release, see below
   kubeStateMetrics:
