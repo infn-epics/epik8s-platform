@@ -76,7 +76,10 @@ clusterBackup:
   failedJobsHistoryLimit: 1
   backoffLimit: 2
   activeDeadlineSeconds: 14400
-  retentionDays: 1
+  ## daily backups kept for a week; the first complete backup of each month
+  ## is also copied to /backup/monthly/<YYYYMM> and kept for monthlyRetentionMonths
+  retentionDays: 7
+  monthlyRetentionMonths: 12
   image: bitnami/kubectl:latest
   centralServices:
     elasticsearch:

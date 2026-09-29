@@ -52,6 +52,19 @@ rules:
       - pods/exec
     verbs:
       - create
+  - apiGroups: ["storage.k8s.io"]
+    resources:
+      - storageclasses
+    verbs:
+      - get
+      - list
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources:
+      - clusterroles
+      - clusterrolebindings
+    verbs:
+      - get
+      - list
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -97,6 +110,17 @@ spec:
 
                   TIMESTAMP=$(date +%Y%m%d_%H%M%S)
                   BACKUP_ROOT="/backup/$TIMESTAMP"
+                  MONTHLY_DIR="/backup/monthly"
+
+                  ## prune before backing up, so retention still applies on
+                  ## nights where a later step fails under set -e
+                  echo "Pruning daily backups older than {{ .Values.clusterBackup.retentionDays | default 7 }} days"
+                  find /backup -mindepth 1 -maxdepth 1 -type d -name '20*_*' -mtime +{{ .Values.clusterBackup.retentionDays | default 7 }} -exec rm -rf {} \;
+                  echo "Pruning monthly backups older than {{ .Values.clusterBackup.monthlyRetentionMonths | default 12 }} months"
+                  if [ -d "$MONTHLY_DIR" ]; then
+                    find "$MONTHLY_DIR" -mindepth 1 -maxdepth 1 -type d -mtime +{{ mul (.Values.clusterBackup.monthlyRetentionMonths | default 12) 31 }} -exec rm -rf {} \;
+                  fi
+
                   CLUSTER_DIR="$BACKUP_ROOT/cluster"
                   SERVICES_DIR="$BACKUP_ROOT/central-services"
                   mkdir -p "$BACKUP_ROOT"
@@ -153,8 +177,15 @@ spec:
                   fi
                   {{- end }}
 
-                  echo "Cleaning backups older than {{ .Values.clusterBackup.retentionDays | default 30 }} days"
-                  find /backup -mindepth 1 -maxdepth 1 -type d -mtime +{{ .Values.clusterBackup.retentionDays | default 30 }} -exec rm -rf {} \;
+                  ## the first complete backup of each month is kept as that
+                  ## month's monthly copy (not tied to the 1st, so one failed
+                  ## night doesn't skip a month)
+                  MONTH=$(date +%Y%m)
+                  if [ ! -d "$MONTHLY_DIR/$MONTH" ]; then
+                    echo "Promoting $TIMESTAMP to monthly backup $MONTH"
+                    mkdir -p "$MONTHLY_DIR"
+                    cp -a "$BACKUP_ROOT" "$MONTHLY_DIR/$MONTH"
+                  fi
 
                   echo "Cluster-scoped backup completed: $BACKUP_ROOT"
               resources:
