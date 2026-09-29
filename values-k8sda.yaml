@@ -576,15 +576,58 @@ kube-prometheus-stack:
               annotations:
                 summary: "Pod container OOMKilled"
                 description: "A container was terminated because it ran out of memory."
-            - alert: BackupFailures
+        ## every CronJob whose name contains "backup" (cluster-backup plus the
+        ## per-beamline archiver-backup/olog-backup). The previous single rule,
+        ## increase(kube_job_failed[24h]), could never fire: the series appears
+        ## already at 1, so increase() sees no change.
+        - name: platform.backup
+          rules:
+            ## fast signal: a backup Job ended Failed (all retries used) and
+            ## was started in the last 24h, so a leftover failed Job doesn't
+            ## page forever - BackupMissing keeps covering it after that
+            - alert: BackupJobFailed
               expr: |
-                increase(kube_job_failed{namespace="backup",job_name=~"cluster-backup.*"}[24h]) > 0
-              for: 5m
+                (kube_job_failed{condition="true", job_name=~".*backup.*"} > 0)
+                and on (namespace, job_name)
+                (time() - kube_job_status_start_time < 86400)
+              for: 1m
               labels:
                 severity: critical
+                component: backup
               annotations:
-                summary: "Cluster backup job failures"
-                description: "The cluster backup job has failed recently."
+                summary: "Backup job {{ $labels.namespace }}/{{ $labels.job_name }} failed"
+                description: "Backup Job {{ $labels.namespace }}/{{ $labels.job_name }} failed after all retries. Check: kubectl -n {{ $labels.namespace }} logs job/{{ $labels.job_name }}"
+            ## catch-all: no successful run in 26h (daily schedule + slack), or
+            ## never succeeded at all for a CronJob older than 26h - covers
+            ## failures, jobs that never start, and silently broken schedules
+            - alert: BackupMissing
+              expr: |
+                max by (namespace, cronjob) (
+                  time() - kube_cronjob_status_last_successful_time{cronjob=~".*backup.*"} > 26 * 3600
+                )
+                or
+                max by (namespace, cronjob) (
+                  (kube_cronjob_info{cronjob=~".*backup.*"}
+                    unless on (namespace, cronjob) kube_cronjob_status_last_successful_time)
+                  and on (namespace, cronjob) (time() - kube_cronjob_created > 26 * 3600)
+                )
+              for: 10m
+              labels:
+                severity: critical
+                component: backup
+              annotations:
+                summary: "No successful backup for {{ $labels.namespace }}/{{ $labels.cronjob }} in over 26h"
+                description: "CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} has not completed successfully in the last 26 hours (or ever)."
+            - alert: BackupSuspended
+              expr: |
+                kube_cronjob_spec_suspend{cronjob=~".*backup.*"} == 1
+              for: 1h
+              labels:
+                severity: warning
+                component: backup
+              annotations:
+                summary: "Backup CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} is suspended"
+                description: "CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} has been suspended for over an hour; no backups are being taken."
 
 ## grafana subchart values - exact USER-SUPPLIED VALUES from the live "grafana" helm
 ## release (grafana-10.3.0), EXCEPT adminUser/adminPassword: the live release set
