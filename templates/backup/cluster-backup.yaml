@@ -111,6 +111,7 @@ spec:
                   TIMESTAMP=$(date +%Y%m%d_%H%M%S)
                   BACKUP_ROOT="/backup/$TIMESTAMP"
                   MONTHLY_DIR="/backup/monthly"
+                  FAILED=0
 
                   ## prune before backing up, so retention still applies on
                   ## nights where a later step fails under set -e
@@ -150,15 +151,52 @@ spec:
 {{ toJson .Values.networking.nodeLabels | nindent 18 }}
                   EOF
 
-                  {{- if .Values.clusterBackup.centralServices.elasticsearch.enabled }}
+                  {{- $es := .Values.clusterBackup.centralServices.elasticsearch }}
+                  {{- if $es.enabled }}
                   echo "Backing up central Elasticsearch"
-                  ES_PASSWORD=$(kubectl get secret {{ .Values.clusterBackup.centralServices.elasticsearch.passwordSecretName | default "elasticsearch-es-elastic-user" }} -n {{ .Values.clusterBackup.centralServices.elasticsearch.namespace | default "backend" }} -o jsonpath='{.data.{{ .Values.clusterBackup.centralServices.elasticsearch.passwordSecretKey | default "elastic" }}}' | base64 -d)
-                  curl -u "{{ .Values.clusterBackup.centralServices.elasticsearch.username | default "elastic" }}:$ES_PASSWORD" "http://{{ .Values.clusterBackup.centralServices.elasticsearch.host | default "elasticsearch-es-http.backend.svc" }}:{{ .Values.clusterBackup.centralServices.elasticsearch.port | default 9200 }}/_cat/indices?h=index" | grep -v '^\.' | while read -r index; do
-                    echo "  - backing up Elasticsearch index $index"
-                    curl -u "{{ .Values.clusterBackup.centralServices.elasticsearch.username | default "elastic" }}:$ES_PASSWORD" -XPUT "http://{{ .Values.clusterBackup.centralServices.elasticsearch.host | default "elasticsearch-es-http.backend.svc" }}:{{ .Values.clusterBackup.centralServices.elasticsearch.port | default 9200 }}/_snapshot/{{ .Values.clusterBackup.centralServices.elasticsearch.snapshotRepository | default "my_backup" }}/snapshot_${index}_$TIMESTAMP?wait_for_completion=true" \
-                      -H 'Content-Type: application/json' \
-                      -d "{\"indices\":\"$index\"}"
-                  done
+                  ## runs in a subshell so an Elasticsearch failure still lets
+                  ## MongoDB/Grafana back up; it fails the job at the end.
+                  ## set -e is inert here (subshell is the left side of ||),
+                  ## hence the explicit "|| exit 1" on every step.
+                  (
+                    ES_URL="https://{{ $es.host | default "elasticsearch-es-http.backend.svc" }}:{{ $es.port | default 9200 }}"
+                    ES_REPO="{{ $es.snapshotRepository | default "my_backup" }}"
+                    ES_CA=$(mktemp)
+                    kubectl get secret {{ $es.caSecretName | default "elasticsearch-es-http-certs-public" }} -n {{ $es.namespace | default "backend" }} -o jsonpath='{.data.ca\.crt}' | base64 -d > "$ES_CA" || exit 1
+                    ES_PASSWORD=$(kubectl get secret {{ $es.passwordSecretName | default "elasticsearch-es-elastic-user" }} -n {{ $es.namespace | default "backend" }} -o jsonpath='{.data.{{ $es.passwordSecretKey | default "elastic" }}}' | base64 -d) || exit 1
+                    es() { curl -sS --fail-with-body --cacert "$ES_CA" -u "{{ $es.username | default "elastic" }}:$ES_PASSWORD" -H 'Content-Type: application/json' "$@"; }
+
+                    ## idempotent: (re)registers the fs repository backed by
+                    ## the es-snapshots volume mounted on every ES node
+                    es -XPUT "$ES_URL/_snapshot/$ES_REPO" -d '{"type":"fs","settings":{"location":"{{ $es.repositoryLocation | default "/usr/share/elasticsearch/snapshots" }}"}}' || exit 1
+                    echo
+
+                    ## snapshots are incremental, so one all-indices snapshot
+                    ## per night (system indices excluded) is cheap
+                    snap() {
+                      echo "  - snapshot $1"
+                      es -XPUT "$ES_URL/_snapshot/$ES_REPO/$1?wait_for_completion=true" \
+                        -d '{"indices":"*,-.*","include_global_state":false}' > /tmp/snap.json || { cat /tmp/snap.json; return 1; }
+                      grep -q '"state":"SUCCESS"' /tmp/snap.json || { cat /tmp/snap.json; return 1; }
+                    }
+                    snap "nightly-$TIMESTAMP" || exit 1
+                    MONTH=$(date +%Y%m)
+                    if ! es "$ES_URL/_snapshot/$ES_REPO/monthly-$MONTH" > /dev/null 2>&1; then
+                      snap "monthly-$MONTH" || exit 1
+                    fi
+
+                    DAILY_CUTOFF=$(date -d "-{{ .Values.clusterBackup.retentionDays | default 7 }} days" +%Y%m%d)
+                    MONTHLY_CUTOFF=$(date -d "-{{ .Values.clusterBackup.monthlyRetentionMonths | default 12 }} months" +%Y%m)
+                    for id in $(es "$ES_URL/_cat/snapshots/$ES_REPO?h=id") ; do
+                      case "$id" in
+                        nightly-*) [ "${id:8:8}" \< "$DAILY_CUTOFF" ] || continue ;;
+                        monthly-*) [ "${id:8:6}" \< "$MONTHLY_CUTOFF" ] || continue ;;
+                        *) continue ;;
+                      esac
+                      echo "  - pruning snapshot $id"
+                      es -XDELETE "$ES_URL/_snapshot/$ES_REPO/$id" > /dev/null || exit 1
+                    done
+                  ) || { echo "Elasticsearch backup FAILED"; FAILED=1; }
                   {{- end }}
 
                   {{- if .Values.clusterBackup.centralServices.mongodb.enabled }}
@@ -181,13 +219,14 @@ spec:
                   ## month's monthly copy (not tied to the 1st, so one failed
                   ## night doesn't skip a month)
                   MONTH=$(date +%Y%m)
-                  if [ ! -d "$MONTHLY_DIR/$MONTH" ]; then
+                  if [ "$FAILED" = 0 ] && [ ! -d "$MONTHLY_DIR/$MONTH" ]; then
                     echo "Promoting $TIMESTAMP to monthly backup $MONTH"
                     mkdir -p "$MONTHLY_DIR"
                     cp -a "$BACKUP_ROOT" "$MONTHLY_DIR/$MONTH"
                   fi
 
                   echo "Cluster-scoped backup completed: $BACKUP_ROOT"
+                  exit "$FAILED"
               resources:
 {{- toYaml .Values.clusterBackup.resources | nindent 16 }}
               volumeMounts:

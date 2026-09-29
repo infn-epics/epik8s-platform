@@ -91,6 +91,10 @@ clusterBackup:
       passwordSecretName: elasticsearch-es-elastic-user
       passwordSecretKey: elastic
       snapshotRepository: my_backup
+      ## ECK's HTTP endpoint is TLS-only; the job trusts its CA from this secret
+      caSecretName: elasticsearch-es-http-certs-public
+      ## must match backend.elasticsearch.snapshotRepository.mountPath
+      repositoryLocation: /usr/share/elasticsearch/snapshots
     mongodb:
       enabled: true
       namespace: backend
@@ -323,6 +327,13 @@ backend:
     nodeCount: 1
     javaOpts: "-Xms1g -Xmx1g"
     storageSize: 50Gi
+    ## fs snapshot repository used by clusterBackup (path.repo + RWX volume)
+    snapshotRepository:
+      enabled: false
+      claimName: es-snapshots
+      storageClassName: ""
+      size: 50Gi
+      mountPath: /usr/share/elasticsearch/snapshots
     resources:
       limits: { cpu: 2, memory: 4Gi }
       requests: { cpu: 1, memory: 2Gi }

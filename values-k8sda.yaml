@@ -388,6 +388,10 @@ clusterBackup:
       passwordSecretName: elasticsearch-es-elastic-user
       passwordSecretKey: elastic
       snapshotRepository: my_backup
+      ## ECK's HTTP endpoint is TLS-only; the job trusts its CA from this secret
+      caSecretName: elasticsearch-es-http-certs-public
+      ## must match backend.elasticsearch.snapshotRepository.mountPath
+      repositoryLocation: /usr/share/elasticsearch/snapshots
     mongodb:
       enabled: true
       namespace: backend
@@ -1262,6 +1266,14 @@ backend:
     ## live PVC has no explicit storageClassName -> uses the cluster default
     ## (local-path, already codified as default in storage.classes).
     storageSize: 50Gi
+    ## snapshot target for the nightly cluster-backup job; nfs20t (RWX) keeps
+    ## snapshots off the node-local disk the data lives on
+    snapshotRepository:
+      enabled: true
+      claimName: es-snapshots
+      storageClassName: nfs20t
+      size: 50Gi
+      mountPath: /usr/share/elasticsearch/snapshots
 
   mongo:
     ## live PVC uses archiver-lts (codified above under storage.classes).

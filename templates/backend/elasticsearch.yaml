@@ -1,6 +1,25 @@
 {{- if and .Values.backend.enabled .Values.backend.elasticsearch.enabled }}
 {{- $ns := .Values.backend.namespace }}
 {{- $es := .Values.backend.elasticsearch }}
+{{- $snap := $es.snapshotRepository | default dict }}
+{{- if $snap.enabled }}
+## shared-filesystem snapshot repository (path.repo); must be RWX when
+## nodeCount > 1 since every node mounts the same location
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $snap.claimName | default "es-snapshots" }}
+  namespace: {{ $ns }}
+spec:
+  accessModes: ["ReadWriteMany"]
+  {{- with $snap.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $snap.size | default "50Gi" | quote }}
+---
+{{- end }}
 apiVersion: elasticsearch.k8s.elastic.co/v1
 kind: Elasticsearch
 metadata:
@@ -13,6 +32,9 @@ spec:
       count: {{ $es.nodeCount }}
       config:
         node.store.allow_mmap: false
+        {{- if $snap.enabled }}
+        path.repo: [{{ $snap.mountPath | default "/usr/share/elasticsearch/snapshots" | quote }}]
+        {{- end }}
       podTemplate:
         spec:
           containers:
@@ -22,6 +44,17 @@ spec:
                   value: {{ $es.javaOpts | quote }}
               resources:
                 {{- toYaml $es.resources | nindent 16 }}
+              {{- if $snap.enabled }}
+              volumeMounts:
+                - name: snapshots
+                  mountPath: {{ $snap.mountPath | default "/usr/share/elasticsearch/snapshots" }}
+              {{- end }}
+          {{- if $snap.enabled }}
+          volumes:
+            - name: snapshots
+              persistentVolumeClaim:
+                claimName: {{ $snap.claimName | default "es-snapshots" }}
+          {{- end }}
       volumeClaimTemplates:
         - metadata:
             name: elasticsearch-data
