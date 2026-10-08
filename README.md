@@ -599,6 +599,9 @@ credentials), the chart references the **existing** Secret object by name
   real LLM API keys and any argus-mcp backend credentials must be supplied
   out-of-band (e.g. `--set` on the generated Application, or a separate
   untracked overlay), the same policy argus-helm-chart's own README documents.
+- Beamline Git tokens (`epik8s-secret`, key `git_token`, used by IOC init
+  containers to clone private submodules): format, rotation, and a proposed
+  one-token-per-group scheme in [docs/git-credentials.md](docs/git-credentials.md).
 
 ## Repo layout
 
