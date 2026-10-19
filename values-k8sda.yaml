@@ -527,6 +527,14 @@ kube-prometheus-stack:
             group_by: [alertname, namespace, cronjob, job_name]
             group_interval: 5m
             repeat_interval: 12h
+          ## warnings (crashlooping IOCs, not-ready pods, failed jobs...) were
+          ## still ~100 mails/day after the change above, mostly long-standing
+          ## beamline/test pods flapping inside their group every 30m. They are
+          ## not mailed at all: they stay visible in Alertmanager and Grafana,
+          ## only critical and backup alerts reach the inbox.
+          - receiver: "null"
+            matchers:
+              - severity = "warning"
       receivers:
         - name: "null"
         - name: platform-email
