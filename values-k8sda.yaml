@@ -1284,6 +1284,32 @@ aiPlatform:
     speech:
       stt:
         model: "Systran/faster-whisper-large-v3"
+    ## ARGUS Knowledge Hub (equipment, tickets, documents, knowledge graph,
+    ## ibek IOC tools; read-only) - a different program from the beamline
+    ## argus-mcp servers below, running on INFN Cloud, so a plain mcpServers
+    ## entry merged with values.yaml's defaults (not an argusMcpServers one).
+    ## Each user enters their own ARGUS personal access token (My account ->
+    ## Personal access tokens, read scope) and the workspace to ask in, so
+    ## ARGUS answers with that person's own permissions. Both are needed: an
+    ## unanswered placeholder would reach ARGUS as literal text.
+    mcpServers:
+      argus-hub:
+        enabled: true
+        type: streamable-http
+        url: "https://argus-hub-api.90.147.174.30.myip.cloud.infn.it/mcp"
+        chatMenu: true
+        title: "ARGUS Knowledge Hub"
+        description: "Equipment, tickets, documents and the knowledge graph of a workspace; ibek IOC tools. Read-only."
+        headers:
+          Authorization: "Bearer {{ARGUS_HUB_TOKEN}}"
+          X-Workspace-Id: "{{ARGUS_HUB_WORKSPACE}}"
+        customUserVars:
+          ARGUS_HUB_TOKEN:
+            title: "ARGUS personal access token"
+            description: "In ARGUS: My account -> Personal access tokens, with read scope (starts with argus_pat_)."
+          ARGUS_HUB_WORKSPACE:
+            title: "ARGUS workspace"
+            description: "The id of the workspace to ask in, as in ARGUS addresses (/workspaces/<id>/...). Change it to ask in another one."
     ## serviceName confirmed by rendering each beamline's computed argus values
     ## through argus-helm-chart directly (helm's naming convention for release
     ## name "argus" + chart name "argus-helm-chart", not simply "argus-mcp").
