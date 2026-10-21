@@ -1300,9 +1300,17 @@ aiPlatform:
         chatMenu: true
         title: "ARGUS Knowledge Hub"
         description: "Equipment, tickets, documents and the knowledge graph of a workspace; ibek IOC tools. Read-only."
-        ## LibreChat passes an MCP server's own instructions (how to use its tools, and to link the
-        ## records it cites by their url) to the model only when asked to.
-        serverInstructions: true
+        ## LibreChat passes an MCP server's instructions to the model only when this is set. Written
+        ## out here rather than `true` (fetch them from the server): the hub answers even `initialize`
+        ## only with a user's token, which LibreChat's own connection at startup does not have.
+        serverInstructions: >-
+          ARGUS Knowledge Hub: equipment (assets), tickets and documents of an accelerator, and the
+          knowledge graph between them. Every record in a result has a `url`, its page in ARGUS:
+          whenever you mention a record, link it with that url, for example
+          [PROC-012 Bake-out procedure](url) or [SPARC:VAC:IP-02](url). Never invent a url.
+          Each tool works in one workspace; list_workspaces says which ones you may ask in, and the
+          optional `workspace` argument asks in another one. Use graph_neighbours for what spans
+          records, search_knowledge for what is written. Everything is read-only.
         headers:
           Authorization: "Bearer {{ARGUS_HUB_TOKEN}}"
           X-Workspace-Id: "{{ARGUS_HUB_WORKSPACE}}"
