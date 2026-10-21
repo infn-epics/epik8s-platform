@@ -1300,6 +1300,9 @@ aiPlatform:
         chatMenu: true
         title: "ARGUS Knowledge Hub"
         description: "Equipment, tickets, documents and the knowledge graph of a workspace; ibek IOC tools. Read-only."
+        ## LibreChat passes an MCP server's own instructions (how to use its tools, and to link the
+        ## records it cites by their url) to the model only when asked to.
+        serverInstructions: true
         headers:
           Authorization: "Bearer {{ARGUS_HUB_TOKEN}}"
           X-Workspace-Id: "{{ARGUS_HUB_WORKSPACE}}"
