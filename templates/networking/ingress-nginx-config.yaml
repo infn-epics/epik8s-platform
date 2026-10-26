@@ -1,0 +1,32 @@
+{{- /*
+Overrides for the RKE2-bundled ingress-nginx addon (rke2-ingress-nginx). RKE2
+merges this HelmChartConfig into the addon's chart values and rolls the
+controller DaemonSet. Before this template it was applied by hand with only
+the default-ssl-certificate arg.
+
+config.large-client-header-buffers: nginx defaults to "4 8k", i.e. a single
+header line may not exceed 8 KB. Keycloak access tokens for OAuth2 clients
+are ~7.5-8 KB, so Phoebus' Olog client (HTTP/1.1, Authorization: Bearer ...)
+got "400 Request Header Or Cookie Too Large" on PUT /Olog/logs/multipart,
+while browsers squeaked through over HTTP/2. Olog itself already accepts
+64 KB headers (SERVER_MAXHTTPREQUESTHEADERSIZE).
+*/ -}}
+{{- if and .Values.networking.enabled .Values.networking.ingressNginx.enabled }}
+{{- $v := .Values.networking.ingressNginx }}
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: rke2-ingress-nginx
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    controller:
+      extraArgs:
+        default-ssl-certificate: {{ $v.defaultSslCertificate }}
+{{- with $v.config }}
+      config:
+{{- range $k, $val := . }}
+        {{ $k }}: {{ $val | quote }}
+{{- end }}
+{{- end }}
+{{- end }}

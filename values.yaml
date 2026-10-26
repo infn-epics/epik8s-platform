@@ -15,6 +15,12 @@ networking:
   ## labels to apply to existing Node objects: {name, labels{}} - merged onto the
   ## node (does not touch spec/status or labels not listed here). See README.
   nodeLabels: []
+  ## HelmChartConfig for the RKE2 ingress-nginx addon (kube-system/rke2-ingress-nginx).
+  ingressNginx:
+    enabled: false
+    defaultSslCertificate: ""
+    ## ingress-nginx ConfigMap keys
+    config: {}
 
 storage:
   enabled: true
