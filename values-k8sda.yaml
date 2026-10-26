@@ -4,6 +4,12 @@
 
 networking:
   enabled: true
+  ingressNginx:
+    enabled: true
+    defaultSslCertificate: kube-system/k8sda-wildcard-tls
+    config:
+      ## Keycloak bearer tokens are ~8 KB; default "4 8k" rejects them over HTTP/1.1
+      large-client-header-buffers: "4 32k"
   metallb:
     pools:
       - name: default-k8s-108
