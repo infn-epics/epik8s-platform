@@ -417,15 +417,6 @@ clusterBackup:
       namespace: monitoring
       podSelector: app.kubernetes.io/name=grafana
       dataPath: /var/lib/grafana
-    ## The central LibreChat's own MongoDB (users, conversations, agents,
-    ## per-user MCP settings) - a Deployment with a generated pod name, so it
-    ## is found by label. Not the backend MongoDB above: losing it is losing
-    ## every LibreChat account, as happened on 2026-10-27 when the LibreChat
-    ## Application was deleted.
-    librechatMongodb:
-      enabled: true
-      namespace: ai-platform
-      podSelector: app.kubernetes.io/name=mongodb,app.kubernetes.io/instance=epik8s-platform-librechat
   clusterRoles:
     - backup-cluster-role
   clusterRoleBindings:
@@ -1120,6 +1111,12 @@ aiPlatform:
     ## Retain, so deleting this Application never again wipes LibreChat's
     ## users and conversations (2026-10-27) - see storage.classes.
     storageClass: local-path-retain
+    ## LibreChat's accounts and conversations live in the backend domain's
+    ## MongoDB (database LibreChat): outside this Application, so deleting it
+    ## can't touch them, on Retain NFS (archiver-lts), and in the nightly
+    ## cluster-backup dump. That MongoDB runs without authentication, like
+    ## LibreChat's own did - see README "LibreChat's data".
+    mongoUri: "mongodb://mongodb.backend.svc.cluster.local:27017/LibreChat"
     publicUrl: "https://argus.k8sda.lnf.infn.it"
     ## OIDC-only: accounts are created on first INFN SSO login.
     allowSocialRegistration: true

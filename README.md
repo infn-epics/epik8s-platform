@@ -174,23 +174,35 @@ entries, and points `llm.endpoints` at the already-deployed `litellm` gateway
 `vllmService` "facility-wide singleton" stays disabled, since this chart
   already has that singleton as `aiPlatform.vllm`).
 
-### LibreChat's data: Retain volumes and nightly dumps
+### LibreChat's data: the backend MongoDB and Retain volumes
 
 Deleting the `epik8s-platform-librechat` Argo CD Application deletes every
 resource it deployed, its volume claims included. On 2026-10-27 that wiped
-LibreChat's MongoDB (every account, conversation and agent) because its
-volumes used `local-path`, whose reclaim policy is Delete. Two things now
-guard against that:
+LibreChat's own MongoDB (every account, conversation and agent): its volume
+was `local-path` (reclaim Delete), and nothing backed it up. Now:
 
-- `aiPlatform.librechat.storageClass: local-path-retain`. This is the same
-  node-local provisioner with reclaim policy Retain (`storage.classes`, core
-  domain). A deleted claim leaves its volume `Released`, with the data
-  still there. To reuse it, clear the volume's `claimRef` and recreate the
-  claim with the same name.
-- `clusterBackup.centralServices.librechatMongodb`: the nightly job runs
-  `mongodump --archive --gzip` in LibreChat's MongoDB pod, writing
-  `services/librechat-mongodb_<timestamp>.archive.gz`. To restore, run
-  `mongorestore --archive --gzip --drop` against the new pod.
+- **LibreChat's database is the backend domain's MongoDB**
+  (`aiPlatform.librechat.mongoUri`, database `LibreChat`). The LibreChat
+  subchart's own MongoDB isn't deployed. That database lives outside
+  LibreChat's Application, so deleting it can't touch the data. It sits on
+  Retain NFS (`archiver-lts`), and the nightly `cluster-backup` already dumps
+  it (`clusterBackup.centralServices.mongodb`). To restore only LibreChat, run
+  `mongorestore --archive --nsInclude='LibreChat.*' --drop` from that dump.
+- **Meilisearch and the uploaded-images volume** stay with LibreChat, on
+  `local-path-retain`: the same node-local provisioner, but with reclaim
+  policy Retain (`storage.classes`, core domain). A deleted claim leaves its
+  volume `Released` with the data still there; to reuse it, clear the
+  volume's `claimRef` and recreate the claim with the same name. LibreChat
+  rebuilds the Meilisearch index from MongoDB, so that volume is a
+  convenience, not a record.
+
+Trade-off: the backend MongoDB runs **without authentication** and has no
+NetworkPolicy, so any pod in the cluster can read LibreChat's conversations,
+as it already can the beamlines' Olog attachments stored there. LibreChat's
+previous MongoDB had no authentication either, but did have a NetworkPolicy.
+Turning on authentication in the backend MongoDB, with one user per
+database, would close this for both. That means giving Olog credentials,
+so it's a change of its own.
 
 ### ARGUS knowledge-source comparison (`argusMcpInstances`)
 

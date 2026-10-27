@@ -110,15 +110,6 @@ clusterBackup:
       namespace: monitoring
       podSelector: app.kubernetes.io/name=grafana
       dataPath: /var/lib/grafana
-    ## The central LibreChat's own MongoDB (users, conversations, agents,
-    ## per-user MCP settings) - a Deployment with a generated pod name, so it
-    ## is found by label. Not the backend MongoDB above: losing it is losing
-    ## every LibreChat account, as happened on 2026-10-27 when the LibreChat
-    ## Application was deleted.
-    librechatMongodb:
-      enabled: true
-      namespace: ai-platform
-      podSelector: app.kubernetes.io/name=mongodb,app.kubernetes.io/instance=epik8s-platform-librechat
   clusterRoles:
     - backup-cluster-role
   clusterRoleBindings:
@@ -765,6 +756,13 @@ aiPlatform:
     ## Application can't wipe the data. A claim's class is immutable: an
     ## existing volume only moves to it by deleting its claim and resyncing.
     storageClass: ""
+    ## An external MongoDB for LibreChat instead of the one argus-helm-chart's
+    ## LibreChat subchart deploys (which is then not deployed at all: no pod,
+    ## no volume). Point it at a database that outlives LibreChat's own
+    ## Application and is already backed up - k8sda: the backend domain's
+    ## MongoDB, dumped nightly by clusterBackup.centralServices.mongodb.
+    ## Empty = LibreChat's own MongoDB.
+    mongoUri: ""
     ingress:
       enabled: false
       className: nginx
