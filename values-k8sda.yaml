@@ -1490,6 +1490,9 @@ aiPlatform:
             backends:
               epics: {caAddrList: "gateway.euaps.svc.cluster.local", caAutoAddrList: false}
               kubernetes: {namespaceDefault: "euaps"}
+              ## EUAPS's save-and-restore (epik8s-euaps, added 2026-10-28), the same
+              ## ingress EUAPS's own ARGUS uses.
+              saverestore: {baseUrl: "http://euaps-saveandrestore.k8sda.lnf.infn.it/save-restore"}
               ## Logbook reads stay on the hub's documents; reading one entry to
               ## change it, and writing, go to EUAPS's Olog as the signed-in user.
               logbook: {baseUrl: "http://olog.euaps.svc.cluster.local:8080"}
