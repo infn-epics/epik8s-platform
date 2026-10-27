@@ -1446,33 +1446,12 @@ aiPlatform:
         backends:
           loki:
             baseUrl: "http://epik8s-platform-loki.logging.svc.cluster.local:3100"
-      ## One pair per beamline: the same questions answered from the legacy
-      ## sources (deploy YAML from git, RAGFLOW, Olog) and from the ARGUS
-      ## Knowledge Hub. Live backends are identical within a pair.
+      ## One ARGUS per beamline answering from the ARGUS Knowledge Hub. The
+      ## YAML-backed counterparts (btf/euaps/sparc-argus-yaml) ran alongside
+      ## them for a comparison until 2026-10-28, and were removed once the hub
+      ## proved itself; the beamlines' own ARGUS (argusMcpServers above) are
+      ## still YAML-backed.
       instances:
-        - name: btf-argus-yaml
-          source: yaml
-          forwardUserToken: true
-          title: "BTF ARGUS YAML"
-          description: "ARGUS for BTF: devices from epik8s-btf's deploy YAML, documentation from RAGFLOW, logbook from Olog."
-          argusMcp:
-            backends:
-              epics: {caAddrList: "gateway.btf.svc.cluster.local", caAutoAddrList: false}
-              kubernetes: {namespaceDefault: "btf"}
-              git:
-                gitlab:
-                  baseUrl: "https://baltig.infn.it"
-                defaultRepos: ["https://baltig.infn.it/lnf-da-control/epik8s-btf.git"]
-                defaultRef: "main"   # epik8s-btf's gitrev
-              documentation:
-                backend: ragflow
-              ragflow:
-                baseUrl: "https://ragflow-api-lnf.131.154.99.90.myip.cloud.infn.it"
-                datasetNames: "Controlli,btf"
-              logbook:
-                ## BTF's Olog API (main connector, plain HTTP on 8080 - see
-                ## epik8s-btf services.olog); no auth for reads.
-                baseUrl: "http://olog.btf.svc.cluster.local:8080"
         - name: btf-argus-hub
           source: knowledgeHub
           forwardUserToken: true
@@ -1483,33 +1462,13 @@ aiPlatform:
             backends:
               epics: {caAddrList: "gateway.btf.svc.cluster.local", caAutoAddrList: false}
               kubernetes: {namespaceDefault: "btf"}
+              ## Creating save-and-restore configurations/snapshots as the signed-in
+              ## user - the same ingress BTF's own ARGUS uses.
+              saverestore: {baseUrl: "http://btf-saveandrestore.k8sda.lnf.infn.it/save-restore"}
               ## Logbook reads stay on the hub's documents; reading one entry to
               ## change it, and writing, go to BTF's Olog as the signed-in user.
               logbook: {baseUrl: "http://olog.btf.svc.cluster.local:8080"}
 
-        - name: euaps-argus-yaml
-          source: yaml
-          forwardUserToken: true
-          title: "EUAPS ARGUS YAML"
-          description: "ARGUS for EUAPS: devices from epik8s-euaps's deploy YAML, documentation from RAGFLOW, logbook from Olog."
-          argusMcp:
-            backends:
-              epics: {caAddrList: "gateway.euaps.svc.cluster.local", caAutoAddrList: false}
-              kubernetes: {namespaceDefault: "euaps"}
-              git:
-                gitlab:
-                  baseUrl: "https://baltig.infn.it"
-                defaultRepos: ["https://baltig.infn.it/lnf-da-control/epik8s-euaps.git"]
-                defaultRef: "devel"   # epik8s-euaps's gitrev
-              documentation:
-                backend: ragflow
-              ragflow:
-                baseUrl: "https://ragflow-api-lnf.131.154.99.90.myip.cloud.infn.it"
-                datasetNames: "Controlli,euaps"
-              logbook:
-                ## EUAPS's Olog API, plain HTTP on 8080 in-cluster (EUAPS's own
-                ## ARGUS uses the euaps-olog ingress); no auth for reads.
-                baseUrl: "http://olog.euaps.svc.cluster.local:8080"
         - name: euaps-argus-hub
           source: knowledgeHub
           forwardUserToken: true
@@ -1527,35 +1486,6 @@ aiPlatform:
               ## change it, and writing, go to EUAPS's Olog as the signed-in user.
               logbook: {baseUrl: "http://olog.euaps.svc.cluster.local:8080"}
 
-        ## SPARC's Olog refuses unauthenticated reads (403, in-cluster and
-        ## through sparc-olog's ingress), so sparc-argus-yaml reads it as the
-        ## signed-in LibreChat user (forwardUserToken). For callers without a
-        ## user token (voice agent, other MCP clients) a read account can still
-        ## be given: logbook.username below + SPARC_LOGBOOK_PASSWORD in
-        ## argus-mcp-instances-credentials, its own key so BTF/EUAPS never get it.
-        - name: sparc-argus-yaml
-          source: yaml
-          forwardUserToken: true
-          title: "SPARC ARGUS YAML"
-          description: "ARGUS for SPARC: devices from epik8-sparc's deploy YAML, documentation from RAGFLOW, logbook from Olog."
-          argusMcp:
-            backends:
-              epics: {caAddrList: "gateway.sparc.svc.cluster.local", caAutoAddrList: false}
-              kubernetes: {namespaceDefault: "sparc"}
-              git:
-                gitlab:
-                  baseUrl: "https://baltig.infn.it"
-                defaultRepos: ["https://baltig.infn.it/lnf-da-control/epik8-sparc.git"]
-                defaultRef: "main"   # epik8-sparc's gitrev
-              documentation:
-                backend: ragflow
-              ragflow:
-                baseUrl: "https://ragflow-api-lnf.131.154.99.90.myip.cloud.infn.it"
-                datasetNames: "Controlli,sparc"
-              logbook:
-                baseUrl: "http://olog.sparc.svc.cluster.local:8080"
-                username: ""   # optional fallback read account - see above
-                passwordSecretKey: "SPARC_LOGBOOK_PASSWORD"
         - name: sparc-argus-hub
           source: knowledgeHub
           forwardUserToken: true
@@ -1566,6 +1496,9 @@ aiPlatform:
             backends:
               epics: {caAddrList: "gateway.sparc.svc.cluster.local", caAutoAddrList: false}
               kubernetes: {namespaceDefault: "sparc"}
+              ## Creating save-and-restore configurations/snapshots as the signed-in
+              ## user - the same ingress SPARC's own ARGUS uses.
+              saverestore: {baseUrl: "http://sparc-saveandrestore.k8sda.lnf.infn.it/save-restore"}
               ## Logbook reads stay on the hub's documents; reading one entry to
               ## change it, and writing, go to SPARC's Olog as the signed-in user.
               logbook: {baseUrl: "http://olog.sparc.svc.cluster.local:8080"}
