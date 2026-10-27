@@ -1374,6 +1374,8 @@ aiPlatform:
         namespace: sparc
         serviceName: argus-argus-helm-chart-argus-mcp
         roomName: sparc-argus-control-room
+        ## SPARC's Olog refuses anonymous reads: read it as the signed-in user.
+        forwardUserToken: true
         title: "SPARC ARGUS"
         description: "ARGUS accelerator-control assistant for the SPARC beamline."
       - name: euaps-argus
@@ -1505,18 +1507,15 @@ aiPlatform:
               epics: {caAddrList: "gateway.euaps.svc.cluster.local", caAutoAddrList: false}
               kubernetes: {namespaceDefault: "euaps"}
 
-        ## SPARC (2026-10-27): two things still to provide, both credentials,
-        ## no values change needed once they exist:
-        ##  - SPARC's Olog refuses unauthenticated reads (403, in-cluster and
-        ##    through sparc-olog's ingress - SPARC's own ARGUS fails the same
-        ##    way): set logbook.username below and add SPARC_LOGBOOK_PASSWORD
-        ##    to argus-mcp-instances-credentials. Its own key, so the BTF and
-        ##    EUAPS instances never send it.
-        ##  - The hub's sparc workspace must be readable by KNOWLEDGE_HUB_TOKEN:
-        ##    an administrator's token (Read + Administer, no fixed workspace)
-        ##    reads it; the current one reaches only btf/euaps/default/lnl.
+        ## SPARC's Olog refuses unauthenticated reads (403, in-cluster and
+        ## through sparc-olog's ingress), so sparc-argus-yaml reads it as the
+        ## signed-in LibreChat user (forwardUserToken). For callers without a
+        ## user token (voice agent, other MCP clients) a read account can still
+        ## be given: logbook.username below + SPARC_LOGBOOK_PASSWORD in
+        ## argus-mcp-instances-credentials, its own key so BTF/EUAPS never get it.
         - name: sparc-argus-yaml
           source: yaml
+          forwardUserToken: true
           title: "SPARC ARGUS YAML"
           description: "ARGUS for SPARC: devices from epik8-sparc's deploy YAML, documentation from RAGFLOW, logbook from Olog."
           argusMcp:
@@ -1535,7 +1534,7 @@ aiPlatform:
                 datasetNames: "Controlli,sparc"
               logbook:
                 baseUrl: "http://olog.sparc.svc.cluster.local:8080"
-                username: ""   # SPARC Olog read account - see above
+                username: ""   # optional fallback read account - see above
                 passwordSecretKey: "SPARC_LOGBOOK_PASSWORD"
         - name: sparc-argus-hub
           source: knowledgeHub

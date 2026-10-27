@@ -860,7 +860,12 @@ aiPlatform:
     ## adding an entry here, don't assume.
     ## roomName is required when voiceAgent or voiceToken is enabled and binds
     ## that LiveKit room to exactly one beamline MCP server.
-    ## {name, namespace, serviceName, roomName, port, path, title, description}
+    ## {name, namespace, serviceName, roomName, port, path, title, description,
+    ##  forwardUserToken}
+    ## forwardUserToken: true sends each signed-in user's own OpenID access
+    ## token (their INFN AAI login) to that ARGUS server, which then calls Olog
+    ## as that person - needed where Olog refuses anonymous reads. Requires
+    ## OPENID_REUSE_TOKENS=true in LibreChat's Secret; see librechat.yaml.
     argusMcpServers: []
 
     ## A lean argus-mcp instance dedicated to THIS LibreChat (not any one
@@ -916,7 +921,8 @@ aiPlatform:
       credentialsSecret: argus-mcp-instances-credentials
       ## {name, source: yaml|knowledgeHub, workspaces (knowledgeHub: hub
       ##  workspace ids, empty = every one the token may read), title,
-      ##  description, argusMcp (merged over defaults), targetRevision}
+      ##  description, argusMcp (merged over defaults), targetRevision,
+      ##  forwardUserToken (as in argusMcpServers above)}
       ## The MCP Service is "<name>-argus-mcp" (fullnameOverride: name).
       instances: []
 
