@@ -964,12 +964,20 @@ aiPlatform:
         routing_strategy: simple-shuffle
         set_verbose: false
 
+  ## qdrant and embeddings are off on k8sda (2026-10-27): their only user was
+  ## the confluence ingester (off too), whose confluence-docs collection
+  ## nothing reads - documentation search goes through RAGFLOW and the ARGUS
+  ## Knowledge Hub. Neither was running; embeddings was only ever the
+  ## http-echo placeholder.
   qdrant:
-    ## live PVC uses nfs20t (codified above under storage.classes), not local-path.
+    enabled: false
     storageClassName: nfs20t
     ingress:
-      enabled: true
+      enabled: false
       host: qdrant.k8sda.lnf.infn.it
+
+  embeddings:
+    enabled: false
 
   ## NOTE: same "new capability, not codification" caveat as librechat below
   ## - nothing live to reproduce here yet. Requires GPU time-slicing enabled

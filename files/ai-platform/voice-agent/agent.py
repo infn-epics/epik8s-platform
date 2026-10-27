@@ -9,8 +9,8 @@ Wires together:
   - Tools:
       * kubernetes-mcp + rag-mcp via livekit-agents' native MCP
         integration - their ENTIRE tool surface is exposed as-is, since
-        both are read-only by construction (see mcp.yaml's RBAC / Qdrant
-        read-only client).
+        both are read-only by construction (see mcp.yaml's RBAC; rag-mcp
+        only searches RAGFlow).
       * exactly one ArgusMcpBridge selected by the current LiveKit room
         (argus_mcp_bridge.py) - an EXPLICIT read-only tool allowlist,
         since those servers mix read tools with set_pv/set_pv_value/

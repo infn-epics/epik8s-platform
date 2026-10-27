@@ -650,10 +650,7 @@ aiPlatform:
 
   mcp:
     enabled: true
-    embeddingsUrl: http://embeddings.ai-platform.svc.cluster.local:80
     prometheusUrl: http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
-    qdrantUrl: http://qdrant.ai-platform.svc.cluster.local:6333
-    ragDefaultCollection: confluence-docs
     ## epics-mcp / git-mcp are placeholders (hashicorp/http-echo) until real MCP
     ## backends are built, see README.
     placeholders:
