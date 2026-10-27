@@ -57,6 +57,10 @@ same registration as argusMcpServers above, with the Service name that
 template's fullnameOverride gives ("<name>-argus-mcp") and the title saying
 which knowledge source the instance answers from, so the two halves of a
 comparison are told apart in the chat menu.
+
+LibreChat refuses to start at all ("Title can only contain letters,
+numbers, and spaces") on any other character in a title, so every title is
+reduced to those here, whatever values.yaml says.
 */ -}}
 {{- range ($lc.argusMcpInstances | default dict).instances }}
 {{- $source := .source | default "yaml" }}
@@ -67,7 +71,7 @@ comparison are told apart in the chat menu.
       "type" "sse"
       "url" (printf "http://%s-argus-mcp.%s.svc.cluster.local:%v/sse" .name $ns $port)
       "chatMenu" true
-      "title" (.title | default (printf "%s (%s)" .name $sourceLabel))
+      "title" (regexReplaceAll "[^A-Za-z0-9 ]+" (.title | default (printf "%s %s" .name $sourceLabel)) " " | trim)
       "description" (.description | default (printf "ARGUS accelerator-control assistant, knowledge from %s." $sourceLabel))
     ) }}
 {{- end }}
