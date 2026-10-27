@@ -936,9 +936,18 @@ aiPlatform:
     className: nginx
     tlsSecretName: ai-platform-tls
 
+  ## vllm and litellm are off on k8sda (2026-10-27): neither runs here, and
+  ## nothing uses them. LibreChat's models and the voice agent (also the
+  ## epik8s-dashboard voice console, through voice-token) go straight to the
+  ## INFN AI Gateways - see voiceAgent below. The config is kept for if an
+  ## in-cluster model is ever wanted again.
+  vllm:
+    enabled: false
+
   litellm:
+    enabled: false
     ingress:
-      enabled: true
+      enabled: false
       host: litellm.k8sda.lnf.infn.it
     ## exact USER-SUPPLIED config from the live "litellm-config" ConfigMap.
     configYaml: |
@@ -1150,18 +1159,12 @@ aiPlatform:
     ## AI-Gateway-WP6/90 are the same two INFN AI Gateway instances BTF's own
     ## argus already uses (epik8-btf... epik8s-btf/deploy/values.yaml
     ## epicsConfiguration.services.argus.llm.endpoints) - reused here as-is, not
-    ## reinvented. Credentials for all three (including LiteLLM Gateway's own
-    ## master key) live only in the argus-librechat-credentials Secret, never
-    ## in this file - see README.md "Secrets handling".
+    ## reinvented. Credentials for every endpoint live only in the
+    ## argus-librechat-credentials Secret, never in this file - see README.md
+    ## "Secrets handling".
     llmEndpoints:
-      - name: "LiteLLM Gateway"
-        apiKeySecretKey: "LITELLM_API_KEY"
-        baseURL: "http://litellm.ai-platform.svc.cluster.local:4000/v1"
-        models:
-          default: ["llama3-8b"]
-          fetch: true
-        titleConvo: true
-        modelDisplayLabel: "LiteLLM Gateway"
+      ## (No "LiteLLM Gateway" any more: it pointed at litellm.ai-platform,
+      ## which never ran on k8sda - aiPlatform.litellm is off.)
       - name: "AI-Gateway-WP6"
         apiKeySecretKey: "AIGW_WP6_API_KEY"
         baseURL: "https://ai-gateway.131.154.99.68.myip.cloud.infn.it/v1"
@@ -1308,7 +1311,6 @@ aiPlatform:
       ## falls back to LibreChat's own ~32k guess. Use the named tiles above
       ## for the verified real limits.
       addedEndpoints:
-        - "LiteLLM Gateway"
         - "AI-Gateway-WP6"
         - "AI-Gateway-90"
         - "Marconi C1002"

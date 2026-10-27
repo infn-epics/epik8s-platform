@@ -4,7 +4,8 @@ providing a Jarvis-like voice interface to the accelerator control system.
 
 Wires together:
   - STT: argus-stt   (OpenAI-compatible faster-whisper, aiPlatform.argusStt)
-  - LLM: litellm gateway (OpenAI-compatible, aiPlatform.litellm)
+  - LLM: any OpenAI-compatible endpoint (aiPlatform.voiceAgent.llmBaseUrl;
+    the in-cluster litellm gateway by default, an INFN AI Gateway on k8sda)
   - TTS: argus-tts   (OpenAI-compatible Piper, aiPlatform.argusTts)
   - Tools:
       * kubernetes-mcp + rag-mcp via livekit-agents' native MCP
