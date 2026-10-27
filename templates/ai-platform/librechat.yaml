@@ -115,18 +115,29 @@ create an account on first OIDC login. Only rendered when explicitly enabled.
 {{- $_ := set $librechatSub "librechat" (dict "configEnv" $configEnv) }}
 {{- end }}
 {{- /*
+LibreChat's database is either the subchart's own MongoDB or, with mongoUri
+set (MONGO_URI above), an external one - then the subchart's MongoDB isn't
+deployed at all. Whichever subchart volumes do exist keep their data
+whatever happens to the Applications above them (Delete=false,Prune=false,
+_helpers.tpl), through each subchart's persistence.annotations; the
+upstream chart's images claim takes no annotations, and storageClass's
+Retain covers it.
+
 One StorageClass for LibreChat's volumes, in the places the upstream chart
-and its MongoDB/Meilisearch subcharts each look for it. With mongoUri set
-(MONGO_URI above) the subchart's MongoDB isn't deployed at all.
+and its MongoDB/Meilisearch subcharts each look for it.
 */ -}}
+{{- $keep := include "epik8s-platform.keepOnDelete" . | fromYaml }}
+{{- $dbPersistence := dict "annotations" $keep }}
+{{- if $lc.storageClass }}
+{{- $_ := set $dbPersistence "storageClass" $lc.storageClass }}
+{{- end }}
 {{- if $lc.mongoUri }}
 {{- $_ := set $librechatSub "mongodb" (dict "enabled" false) }}
+{{- else }}
+{{- $_ := set $librechatSub "mongodb" (dict "persistence" (deepCopy $dbPersistence)) }}
 {{- end }}
+{{- $_ := set $librechatSub "meilisearch" (dict "persistence" (deepCopy $dbPersistence)) }}
 {{- if $lc.storageClass }}
-{{- if not $lc.mongoUri }}
-{{- $_ := set $librechatSub "mongodb" (dict "persistence" (dict "storageClass" $lc.storageClass)) }}
-{{- end }}
-{{- $_ := set $librechatSub "meilisearch" (dict "persistence" (dict "storageClass" $lc.storageClass)) }}
 {{- $inner := $librechatSub.librechat | default dict }}
 {{- $_ := set $inner "imageVolume" (dict "storageClassName" $lc.storageClass) }}
 {{- $_ := set $librechatSub "librechat" $inner }}
@@ -167,6 +178,10 @@ metadata:
   labels:
     deploy: ai-platform
     app: librechat
+  ## Owned by the ai-platform domain's Application (argocd/): deleting or
+  ## pruning that one must not cascade into LibreChat and its data.
+  annotations:
+    {{- include "epik8s-platform.keepOnDelete" . | nindent 4 }}
 spec:
   project: {{ $lc.project }}
   source:
