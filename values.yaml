@@ -861,7 +861,9 @@ aiPlatform:
     ## roomName is required when voiceAgent or voiceToken is enabled and binds
     ## that LiveKit room to exactly one beamline MCP server.
     ## {name, namespace, serviceName, roomName, port, path, title, description,
-    ##  forwardUserToken, confirmWrites}
+    ##  forwardUserToken, confirmWrites, librechat}
+    ## librechat: false hides an entry from LibreChat's menu; the voice agent
+    ## still uses it (its roomName binding).
     ## forwardUserToken: true sends each signed-in user's own OpenID access
     ## token (their INFN AAI login) to that ARGUS server, which then calls Olog
     ## as that person - needed where Olog refuses anonymous reads. Requires
