@@ -1382,42 +1382,53 @@ aiPlatform:
 
     ## BTF answered twice, to compare knowledge sources (values.yaml
     ## argusMcpInstances): device inventory from epik8s-btf's deploy YAML +
-    ## RAGFLOW documentation vs. both from the ARGUS Knowledge Hub above.
-    ## Commented out until the out-of-band Secret exists in ai-platform:
-    ##   kubectl -n ai-platform create secret generic argus-mcp-instances-credentials \
-    ##     --from-literal=KNOWLEDGE_HUB_TOKEN='<admin personal token: Read + Administer, no fixed workspace>' \
-    ##     --from-literal=RAGFLOW_API_KEY='...' --from-literal=GITLAB_TOKEN='...'
-    ## and BTF's hub workspace id is confirmed (list_knowledge_hub_workspaces,
-    ## or the hub's /workspaces/<id>/ addresses).
-    # argusMcpInstances:
-    #   knowledgeHub:
-    #     url: "https://argus-hub-api.90.147.174.30.myip.cloud.infn.it/mcp"
-    #   defaults:
-    #     backends:
-    #       epics:
-    #         caAddrList: ""        # BTF's CA gateway, same as epik8s-btf's own argus
-    #       loki:
-    #         baseUrl: "http://epik8s-platform-loki.logging.svc.cluster.local:3100"
-    #   instances:
-    #     - name: btf-argus-yaml
-    #       source: yaml
-    #       title: "BTF ARGUS (YAML)"
-    #       argusMcp:
-    #         backends:
-    #           git:
-    #             gitlab:
-    #               baseUrl: "https://baltig.infn.it"
-    #             defaultRepos: ["https://baltig.infn.it/lnf-da-control/epik8s-btf.git"]
-    #             defaultRef: "main"   # epik8s-btf's deployed branch (its gitrev)
-    #           documentation:
-    #             backend: ragflow
-    #           ragflow:
-    #             baseUrl: "https://ragflow-api-lnf.131.154.99.90.myip.cloud.infn.it"
-    #             datasetNames: "Controlli,btf"
-    #     - name: btf-argus-hub
-    #       source: knowledgeHub
-    #       workspaces: ["btf"]      # empty = every workspace the token may read
-    #       title: "BTF ARGUS (Knowledge Hub)"
+    ## RAGFLOW documentation + Olog vs. all three from the ARGUS Knowledge
+    ## Hub above (workspace "btf"). Credentials come from the out-of-band
+    ## Secret argus-mcp-instances-credentials in ai-platform
+    ## (KNOWLEDGE_HUB_TOKEN: an administrator's personal token, Read +
+    ## Administer, no fixed workspace; RAGFLOW_API_KEY). epik8s-btf is a
+    ## public baltig repo, so no GITLAB_TOKEN is needed.
+    argusMcpInstances:
+      knowledgeHub:
+        url: "https://argus-hub-api.90.147.174.30.myip.cloud.infn.it/mcp"
+      ## Live backends, the same for both halves of the comparison. These
+      ## pods run in ai-platform, so CA search can't broadcast to BTF's IOCs:
+      ## it goes to BTF's CA gateway Service instead (epik8s-btf services.gateway).
+      defaults:
+        backends:
+          epics:
+            caAddrList: "gateway.btf.svc.cluster.local"
+            caAutoAddrList: false
+          kubernetes:
+            namespaceDefault: "btf"
+          loki:
+            baseUrl: "http://epik8s-platform-loki.logging.svc.cluster.local:3100"
+      instances:
+        - name: btf-argus-yaml
+          source: yaml
+          title: "BTF ARGUS (YAML)"
+          description: "ARGUS for BTF: devices from epik8s-btf's deploy YAML, documentation from RAGFLOW, logbook from Olog."
+          argusMcp:
+            backends:
+              git:
+                gitlab:
+                  baseUrl: "https://baltig.infn.it"
+                defaultRepos: ["https://baltig.infn.it/lnf-da-control/epik8s-btf.git"]
+                defaultRef: "main"   # epik8s-btf's gitrev
+              documentation:
+                backend: ragflow
+              ragflow:
+                baseUrl: "https://ragflow-api-lnf.131.154.99.90.myip.cloud.infn.it"
+                datasetNames: "Controlli,btf"
+              logbook:
+                ## BTF's Olog API (main connector, plain HTTP on 8080 - see
+                ## epik8s-btf services.olog); no auth for reads.
+                baseUrl: "http://olog.btf.svc.cluster.local:8080"
+        - name: btf-argus-hub
+          source: knowledgeHub
+          workspaces: ["btf"]
+          title: "BTF ARGUS (Knowledge Hub)"
+          description: "ARGUS for BTF: devices, documentation and logbook from the ARGUS Knowledge Hub (workspace btf)."
 
   confluenceIngester:
     baseUrl: https://confluence.infn.it
