@@ -1459,6 +1459,9 @@ aiPlatform:
             backends:
               epics: {caAddrList: "gateway.btf.svc.cluster.local", caAutoAddrList: false}
               kubernetes: {namespaceDefault: "btf"}
+              ## Creating save-and-restore configurations/snapshots as the signed-in
+              ## user - the same ingress BTF's own ARGUS uses.
+              saverestore: {baseUrl: "http://btf-saveandrestore.k8sda.lnf.infn.it/save-restore"}
               git:
                 gitlab:
                   baseUrl: "https://baltig.infn.it"
@@ -1483,6 +1486,9 @@ aiPlatform:
             backends:
               epics: {caAddrList: "gateway.btf.svc.cluster.local", caAutoAddrList: false}
               kubernetes: {namespaceDefault: "btf"}
+              ## Creating save-and-restore configurations/snapshots as the signed-in
+              ## user - the same ingress BTF's own ARGUS uses.
+              saverestore: {baseUrl: "http://btf-saveandrestore.k8sda.lnf.infn.it/save-restore"}
               ## Logbook reads stay on the hub's documents; reading one entry to
               ## change it, and writing, go to BTF's Olog as the signed-in user.
               logbook: {baseUrl: "http://olog.btf.svc.cluster.local:8080"}
@@ -1542,6 +1548,9 @@ aiPlatform:
             backends:
               epics: {caAddrList: "gateway.sparc.svc.cluster.local", caAutoAddrList: false}
               kubernetes: {namespaceDefault: "sparc"}
+              ## Creating save-and-restore configurations/snapshots as the signed-in
+              ## user - the same ingress SPARC's own ARGUS uses.
+              saverestore: {baseUrl: "http://sparc-saveandrestore.k8sda.lnf.infn.it/save-restore"}
               git:
                 gitlab:
                   baseUrl: "https://baltig.infn.it"
@@ -1566,6 +1575,9 @@ aiPlatform:
             backends:
               epics: {caAddrList: "gateway.sparc.svc.cluster.local", caAutoAddrList: false}
               kubernetes: {namespaceDefault: "sparc"}
+              ## Creating save-and-restore configurations/snapshots as the signed-in
+              ## user - the same ingress SPARC's own ARGUS uses.
+              saverestore: {baseUrl: "http://sparc-saveandrestore.k8sda.lnf.infn.it/save-restore"}
               ## Logbook reads stay on the hub's documents; reading one entry to
               ## change it, and writing, go to SPARC's Olog as the signed-in user.
               logbook: {baseUrl: "http://olog.sparc.svc.cluster.local:8080"}
