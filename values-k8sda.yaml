@@ -1095,11 +1095,17 @@ aiPlatform:
         enabled: false
       git-mcp:
         enabled: false
+    ## Off on k8sda (2026-10-27): the observer/operator profiles never ran
+    ## here, and the legacy Python kubernetes-mcp that did (hand-applied,
+    ## legacyEnabled is false) had served no request since 2026-09-02.
+    ## Turning this off also drops LibreChat's kubernetes-observer entry
+    ## (librechat.yaml) and the voice agent's KUBERNETES_MCP_URL, which it
+    ## already ignored (native MCP toolsets are disabled in agent.py).
     kubernetesMcp:
-      enabled: true
+      enabled: false
       observer:
         ingress:
-          enabled: true
+          enabled: false
           host: k8sda-mcp.k8sda.lnf.infn.it
     ragMcp:
       enabled: true
