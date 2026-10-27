@@ -112,6 +112,17 @@ create an account on first OIDC login. Only rendered when explicitly enabled.
 {{- $_ := set $librechatSub "librechat" (dict "configEnv" $configEnv) }}
 {{- end }}
 {{- /*
+One StorageClass for all three of LibreChat's volumes, in the three places
+the upstream chart and its MongoDB/Meilisearch subcharts each look for it.
+*/ -}}
+{{- if $lc.storageClass }}
+{{- $_ := set $librechatSub "mongodb" (dict "persistence" (dict "storageClass" $lc.storageClass)) }}
+{{- $_ := set $librechatSub "meilisearch" (dict "persistence" (dict "storageClass" $lc.storageClass)) }}
+{{- $inner := $librechatSub.librechat | default dict }}
+{{- $_ := set $inner "imageVolume" (dict "storageClassName" $lc.storageClass) }}
+{{- $_ := set $librechatSub "librechat" $inner }}
+{{- end }}
+{{- /*
 Default: let argus-helm-chart generate+own its own credentials Secret. When
 $lc.existingSecret is set (needed for auth.mode: oauth2 - see values.yaml's
 comment on aiPlatform.librechat.existingSecret), tell it to skip that and

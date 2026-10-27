@@ -110,6 +110,15 @@ clusterBackup:
       namespace: monitoring
       podSelector: app.kubernetes.io/name=grafana
       dataPath: /var/lib/grafana
+    ## The central LibreChat's own MongoDB (users, conversations, agents,
+    ## per-user MCP settings) - a Deployment with a generated pod name, so it
+    ## is found by label. Not the backend MongoDB above: losing it is losing
+    ## every LibreChat account, as happened on 2026-10-27 when the LibreChat
+    ## Application was deleted.
+    librechatMongodb:
+      enabled: true
+      namespace: ai-platform
+      podSelector: app.kubernetes.io/name=mongodb,app.kubernetes.io/instance=epik8s-platform-librechat
   clusterRoles:
     - backup-cluster-role
   clusterRoleBindings:
@@ -750,6 +759,12 @@ aiPlatform:
     ## and owns the Secret itself (fine for auth.mode: basic, but oauth2
     ## needs a real client secret this chart has no other way to pass through).
     existingSecret: ""
+    ## StorageClass for LibreChat's three volumes (MongoDB, Meilisearch, the
+    ## uploaded-images volume). Empty = the cluster default. Set it to a
+    ## Retain class (k8sda: local-path-retain) so deleting the LibreChat
+    ## Application can't wipe the data. A claim's class is immutable: an
+    ## existing volume only moves to it by deleting its claim and resyncing.
+    storageClass: ""
     ingress:
       enabled: false
       className: nginx

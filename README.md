@@ -174,6 +174,24 @@ entries, and points `llm.endpoints` at the already-deployed `litellm` gateway
 `vllmService` "facility-wide singleton" stays disabled, since this chart
   already has that singleton as `aiPlatform.vllm`).
 
+### LibreChat's data: Retain volumes and nightly dumps
+
+Deleting the `epik8s-platform-librechat` Argo CD Application deletes every
+resource it deployed, its volume claims included. On 2026-10-27 that wiped
+LibreChat's MongoDB (every account, conversation and agent) because its
+volumes used `local-path`, whose reclaim policy is Delete. Two things now
+guard against that:
+
+- `aiPlatform.librechat.storageClass: local-path-retain`. This is the same
+  node-local provisioner with reclaim policy Retain (`storage.classes`, core
+  domain). A deleted claim leaves its volume `Released`, with the data
+  still there. To reuse it, clear the volume's `claimRef` and recreate the
+  claim with the same name.
+- `clusterBackup.centralServices.librechatMongodb`: the nightly job runs
+  `mongodump --archive --gzip` in LibreChat's MongoDB pod, writing
+  `services/librechat-mongodb_<timestamp>.archive.gz`. To restore, run
+  `mongorestore --archive --gzip --drop` against the new pod.
+
 ### ARGUS knowledge-source comparison (`argusMcpInstances`)
 
 `aiPlatform.librechat.argusMcpInstances` deploys extra argus-mcp servers,
