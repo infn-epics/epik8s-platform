@@ -8,8 +8,19 @@ platformBootstrap:
 aiPlatform:
   enabled: true
 
+## backend.enabled alone does not turn off the ECK and Strimzi operators:
+## they are subchart dependencies with their own conditions
+## (backend.eckOperator/strimziOperator.enabled, Chart.yaml). Without these
+## two lines this domain renders a second Elasticsearch and Kafka operator -
+## cluster-wide CRDs, ClusterRoles and an admission webhook - into
+## ai-platform, next to the backend domain's own. The core domain's
+## Application disables them the same way.
 backend:
   enabled: false
+  eckOperator:
+    enabled: false
+  strimziOperator:
+    enabled: false
 
 monitoring:
   kubePrometheusStack:

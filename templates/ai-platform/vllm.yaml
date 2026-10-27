@@ -16,6 +16,8 @@ kind: PersistentVolumeClaim
 metadata:
   name: argus-vllm-model-cache
   namespace: {{ $ns }}
+  annotations:
+    {{- include "epik8s-platform.keepOnDelete" $ | nindent 4 }}
 spec:
   accessModes:
     - ReadWriteOnce

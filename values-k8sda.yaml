@@ -936,9 +936,18 @@ aiPlatform:
     className: nginx
     tlsSecretName: ai-platform-tls
 
+  ## vllm and litellm are off on k8sda (2026-10-27): neither runs here, and
+  ## nothing uses them. LibreChat's models and the voice agent (also the
+  ## epik8s-dashboard voice console, through voice-token) go straight to the
+  ## INFN AI Gateways - see voiceAgent below. The config is kept for if an
+  ## in-cluster model is ever wanted again.
+  vllm:
+    enabled: false
+
   litellm:
+    enabled: false
     ingress:
-      enabled: true
+      enabled: false
       host: litellm.k8sda.lnf.infn.it
     ## exact USER-SUPPLIED config from the live "litellm-config" ConfigMap.
     configYaml: |
@@ -964,12 +973,20 @@ aiPlatform:
         routing_strategy: simple-shuffle
         set_verbose: false
 
+  ## qdrant and embeddings are off on k8sda (2026-10-27): their only user was
+  ## the confluence ingester (off too), whose confluence-docs collection
+  ## nothing reads - documentation search goes through RAGFLOW and the ARGUS
+  ## Knowledge Hub. Neither was running; embeddings was only ever the
+  ## http-echo placeholder.
   qdrant:
-    ## live PVC uses nfs20t (codified above under storage.classes), not local-path.
+    enabled: false
     storageClassName: nfs20t
     ingress:
-      enabled: true
+      enabled: false
       host: qdrant.k8sda.lnf.infn.it
+
+  embeddings:
+    enabled: false
 
   ## NOTE: same "new capability, not codification" caveat as librechat below
   ## - nothing live to reproduce here yet. Requires GPU time-slicing enabled
@@ -1078,11 +1095,17 @@ aiPlatform:
         enabled: false
       git-mcp:
         enabled: false
+    ## Off on k8sda (2026-10-27): the observer/operator profiles never ran
+    ## here, and the legacy Python kubernetes-mcp that did (hand-applied,
+    ## legacyEnabled is false) had served no request since 2026-09-02.
+    ## Turning this off also drops LibreChat's kubernetes-observer entry
+    ## (librechat.yaml) and the voice agent's KUBERNETES_MCP_URL, which it
+    ## already ignored (native MCP toolsets are disabled in agent.py).
     kubernetesMcp:
-      enabled: true
+      enabled: false
       observer:
         ingress:
-          enabled: true
+          enabled: false
           host: k8sda-mcp.k8sda.lnf.infn.it
     ragMcp:
       enabled: true
@@ -1142,18 +1165,12 @@ aiPlatform:
     ## AI-Gateway-WP6/90 are the same two INFN AI Gateway instances BTF's own
     ## argus already uses (epik8-btf... epik8s-btf/deploy/values.yaml
     ## epicsConfiguration.services.argus.llm.endpoints) - reused here as-is, not
-    ## reinvented. Credentials for all three (including LiteLLM Gateway's own
-    ## master key) live only in the argus-librechat-credentials Secret, never
-    ## in this file - see README.md "Secrets handling".
+    ## reinvented. Credentials for every endpoint live only in the
+    ## argus-librechat-credentials Secret, never in this file - see README.md
+    ## "Secrets handling".
     llmEndpoints:
-      - name: "LiteLLM Gateway"
-        apiKeySecretKey: "LITELLM_API_KEY"
-        baseURL: "http://litellm.ai-platform.svc.cluster.local:4000/v1"
-        models:
-          default: ["llama3-8b"]
-          fetch: true
-        titleConvo: true
-        modelDisplayLabel: "LiteLLM Gateway"
+      ## (No "LiteLLM Gateway" any more: it pointed at litellm.ai-platform,
+      ## which never ran on k8sda - aiPlatform.litellm is off.)
       - name: "AI-Gateway-WP6"
         apiKeySecretKey: "AIGW_WP6_API_KEY"
         baseURL: "https://ai-gateway.131.154.99.68.myip.cloud.infn.it/v1"
@@ -1300,7 +1317,6 @@ aiPlatform:
       ## falls back to LibreChat's own ~32k guess. Use the named tiles above
       ## for the verified real limits.
       addedEndpoints:
-        - "LiteLLM Gateway"
         - "AI-Gateway-WP6"
         - "AI-Gateway-90"
         - "Marconi C1002"
@@ -1449,7 +1465,11 @@ aiPlatform:
           title: "BTF ARGUS Knowledge Hub"
           description: "ARGUS for BTF: devices, documentation and logbook from the ARGUS Knowledge Hub (workspace btf)."
 
+  ## Not used on k8sda (2026-10-27): documentation search goes through
+  ## RAGFLOW and the ARGUS Knowledge Hub, not this Confluence->qdrant
+  ## ingester. Settings kept for if it's ever turned back on.
   confluenceIngester:
+    enabled: false
     baseUrl: https://confluence.infn.it
     spaces: LDCG
     sinceDays: "36500"

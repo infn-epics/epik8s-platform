@@ -3,6 +3,10 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: {{ .Values.aiPlatform.namespace }}
+  ## Deleting a namespace deletes everything in it, out-of-band Secrets
+  ## (argus-librechat-credentials, argus-mcp-instances-credentials) included.
+  annotations:
+    {{- include "epik8s-platform.keepOnDelete" . | nindent 4 }}
   labels:
     app.kubernetes.io/part-of: ai-platform
 {{- end }}

@@ -4,13 +4,14 @@ providing a Jarvis-like voice interface to the accelerator control system.
 
 Wires together:
   - STT: argus-stt   (OpenAI-compatible faster-whisper, aiPlatform.argusStt)
-  - LLM: litellm gateway (OpenAI-compatible, aiPlatform.litellm)
+  - LLM: any OpenAI-compatible endpoint (aiPlatform.voiceAgent.llmBaseUrl;
+    the in-cluster litellm gateway by default, an INFN AI Gateway on k8sda)
   - TTS: argus-tts   (OpenAI-compatible Piper, aiPlatform.argusTts)
   - Tools:
       * kubernetes-mcp + rag-mcp via livekit-agents' native MCP
         integration - their ENTIRE tool surface is exposed as-is, since
-        both are read-only by construction (see mcp.yaml's RBAC / Qdrant
-        read-only client).
+        both are read-only by construction (see mcp.yaml's RBAC; rag-mcp
+        only searches RAGFlow).
       * exactly one ArgusMcpBridge selected by the current LiveKit room
         (argus_mcp_bridge.py) - an EXPLICIT read-only tool allowlist,
         since those servers mix read tools with set_pv/set_pv_value/

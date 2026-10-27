@@ -204,6 +204,27 @@ Turning on authentication in the backend MongoDB, with one user per
 database, would close this for both. That means giving Olog credentials,
 so it's a change of its own.
 
+### The ai-platform domain under Argo CD
+
+`argocd/epik8s-platform-ai-platform.yaml` is the domain's own Application:
+it renders `values-k8sda.yaml` + `values-domain-ai-platform.yaml` from
+`main`, which includes the LibreChat and argus-mcp-instances child
+Applications. It replaces the hand-run `helm template | kubectl apply`.
+Apply it once with `kubectl apply -f`.
+
+- **Sync is manual for now.** Git and the cluster had drifted (see the
+  manifest's header comment), so review `argocd app diff`, fix git, then
+  sync. Once the diff is empty, enable `automated: {prune: false, selfHeal:
+  true}`.
+- **Deleting is safe by construction.** The parent has no resources
+  finalizer. The Namespace, every PVC (including LibreChat's, through its
+  subcharts) and the child Applications carry
+  `argocd.argoproj.io/sync-options: Delete=false,Prune=false`
+  (`epik8s-platform.keepOnDelete`). Deleting or pruning, even a cascading
+  delete from the UI, leaves them and their data in place. To remove only
+  an Application, use **Non-cascading (Orphan)** delete, or
+  `argocd app delete <app> --cascade=false`.
+
 ### ARGUS knowledge-source comparison (`argusMcpInstances`)
 
 `aiPlatform.librechat.argusMcpInstances` deploys extra argus-mcp servers,
