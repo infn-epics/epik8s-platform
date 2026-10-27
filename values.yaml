@@ -872,6 +872,44 @@ aiPlatform:
         ragflow:
           baseUrl: ""
 
+    ## Extra argus-mcp servers this chart deploys itself - one ArgoCD
+    ## Application of argus-helm-chart each, MCP only (no LibreChat of its
+    ## own), in the aiPlatform namespace - and registers into this LibreChat.
+    ## Made for comparing where ARGUS gets its knowledge: run a beamline once
+    ## with `source: yaml` (device inventory from the deploy YAML in git,
+    ## documentation from RAGFLOW/local, logbook from Olog - the legacy path)
+    ## and once with `source: knowledgeHub` (all three from the ARGUS
+    ## Knowledge Hub's MCP server), then ask both the same question. Live
+    ## backends (epics, archiver, kubernetes, loki...) are the same for both.
+    ## See templates/ai-platform/argus-mcp-instances.yaml.
+    argusMcpInstances:
+      ## argusMcp values every instance starts from; an instance's own
+      ## `argusMcp` is merged over them (it wins), after its source's preset.
+      defaults:
+        image:
+          repository: ghcr.io/infn-epics/argus-mcp-server
+          tag: latest
+      ## The hub every `source: knowledgeHub` instance reads from (its MCP
+      ## endpoint, e.g. https://argus-hub-api.example.org/mcp).
+      knowledgeHub:
+        url: ""
+      ## Existing Secret (aiPlatform namespace) every instance reads its
+      ## backend credentials from. Never generated here - create it out of
+      ## band. KNOWLEDGE_HUB_TOKEN must be an ARGUS Knowledge Hub personal
+      ## access token made by an administrator with the Read and Administer
+      ## scopes and NOT fixed to a workspace: that is what lets it read every
+      ## workspace (see the hub's guide, "Use ARGUS from an AI assistant").
+      ##   kubectl -n ai-platform create secret generic argus-mcp-instances-credentials \
+      ##     --from-literal=KNOWLEDGE_HUB_TOKEN='argus_pat_...' \
+      ##     --from-literal=RAGFLOW_API_KEY='...' --from-literal=GITLAB_TOKEN='...'
+      ## Keys an instance doesn't use may be left out (every reference is optional).
+      credentialsSecret: argus-mcp-instances-credentials
+      ## {name, source: yaml|knowledgeHub, workspaces (knowledgeHub: hub
+      ##  workspace ids, empty = every one the token may read), title,
+      ##  description, argusMcp (merged over defaults), targetRevision}
+      ## The MCP Service is "<name>-argus-mcp" (fullnameOverride: name).
+      instances: []
+
   confluenceIngester:
     enabled: true
     image: python:3.11-slim

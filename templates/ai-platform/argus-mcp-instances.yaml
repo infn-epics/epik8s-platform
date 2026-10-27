@@ -1,0 +1,96 @@
+{{- /*
+Extra argus-mcp servers, one ArgoCD Application of argus-helm-chart each
+(MCP only: librechat.enabled false), so the same beamline can run side by
+side with its knowledge from the legacy sources (source: yaml) and from the
+ARGUS Knowledge Hub (source: knowledgeHub) - see values.yaml
+aiPlatform.librechat.argusMcpInstances. librechat.yaml registers each one
+into the central LibreChat.
+
+Same Application pattern (and the same argus-helm-chart repoURL/
+targetRevision/project) as librechat.yaml, so an instance's backend env
+mapping is exactly argus-helm-chart's, not a second copy of it here.
+
+Every instance shares the aiPlatform namespace with the central LibreChat
+release, whose argus-helm-chart owns the fixed-name Secret/ConfigMap
+"argus-librechat-credentials"/"argus-librechat-config". So each instance
+gets its own fullnameOverride and resourceNames, never renders a Secret
+(secrets.create false), and reads credentials from the out-of-band
+argusMcpInstances.credentialsSecret instead.
+
+Values precedence for an instance's argusMcp: defaults < source preset <
+the instance's own argusMcp - so an instance can still, e.g., take its
+inventory from the hub but its documentation from RAGFLOW.
+*/ -}}
+{{- if .Values.aiPlatform.enabled }}
+{{- $ns := .Values.aiPlatform.namespace }}
+{{- $lc := .Values.aiPlatform.librechat }}
+{{- $cfg := $lc.argusMcpInstances | default dict }}
+{{- range $cfg.instances }}
+{{- $name := required "aiPlatform.librechat.argusMcpInstances.instances[].name is required" .name }}
+{{- $source := .source | default "yaml" }}
+{{- $preset := dict }}
+{{- if eq $source "yaml" }}
+{{- $preset = dict "backends" (dict "inventory" (dict "backend" "yaml") "logbook" (dict "backend" "olog")) }}
+{{- else if eq $source "knowledgeHub" }}
+{{- $hubUrl := required (printf "aiPlatform.librechat.argusMcpInstances.knowledgeHub.url is required for instance %s (source: knowledgeHub)" $name) ($cfg.knowledgeHub | default dict).url }}
+{{- $preset = dict "backends" (dict
+      "inventory" (dict "backend" "knowledge_hub")
+      "documentation" (dict "backend" "knowledge_hub")
+      "logbook" (dict "backend" "knowledge_hub")
+      "knowledgeHub" (dict "url" $hubUrl "workspaces" (.workspaces | default list))
+    ) }}
+{{- else }}
+{{- fail (printf "aiPlatform.librechat.argusMcpInstances.instances[%s].source must be yaml or knowledgeHub, not %q" $name $source) }}
+{{- end }}
+{{- $argusMcp := mergeOverwrite (deepCopy ($cfg.defaults | default dict)) $preset (deepCopy (.argusMcp | default dict)) (dict "enabled" true) }}
+{{- $values := dict
+      "fullnameOverride" $name
+      "librechat" (dict "enabled" false)
+      "vllmService" (dict "enabled" false)
+      "argusMcp" $argusMcp
+      "resourceNames" (dict
+        "credentialsSecret" ($cfg.credentialsSecret | default "argus-mcp-instances-credentials")
+        "configYaml" (printf "%s-librechat-config" $name))
+      "secrets" (dict "create" false)
+}}
+{{- /*
+argus-mcp reads http_proxy/https_proxy/no_proxy as top-level values (the
+names epik8s-chart injects into beamline releases) - external calls to the
+hub, RAGFLOW and GitLab need the corporate proxy here, same as LibreChat's.
+*/ -}}
+{{- if $.Values.aiPlatform.proxy.enabled }}
+{{- $_ := set $values "http_proxy" $.Values.aiPlatform.proxy.httpProxy }}
+{{- $_ := set $values "https_proxy" $.Values.aiPlatform.proxy.httpsProxy }}
+{{- $_ := set $values "no_proxy" $.Values.aiPlatform.proxy.noProxy }}
+{{- end }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .applicationName | default (printf "epik8s-platform-%s" $name) }}
+  namespace: argocd
+  labels:
+    deploy: ai-platform
+    app: argus-mcp
+    argus-knowledge-source: {{ $source | lower | quote }}
+spec:
+  project: {{ $lc.project }}
+  source:
+    repoURL: {{ $lc.repoURL | quote }}
+    path: .
+    targetRevision: {{ .targetRevision | default $lc.targetRevision }}
+    helm:
+      values: |
+{{ toYaml $values | indent 8 }}
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: {{ $ns }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - Prune=true
+{{- end }}
+{{- end }}
