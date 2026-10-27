@@ -60,7 +60,13 @@ the write only when called again with it. LibreChat has no approval step of
 its own. The voice agent doesn't send it (it has its own operator gate).
 Both headers come from epik8s-platform.argusHeaders (_helpers.tpl).
 */ -}}
+{{- /*
+librechat: false keeps an argusMcpServers entry out of LibreChat's menu
+while the voice agent and voice-token (which bind its roomName to it) keep
+using it.
+*/ -}}
 {{- range $lc.argusMcpServers }}
+{{- if ne (toString .librechat) "false" }}
 {{- $entry := dict
       "enabled" true
       "type" "sse"
@@ -74,6 +80,7 @@ Both headers come from epik8s-platform.argusHeaders (_helpers.tpl).
 {{- $_ := set $entry "headers" $headers }}
 {{- end }}
 {{- $_ := set $mcpServers .name $entry }}
+{{- end }}
 {{- end }}
 {{- /*
 argus-mcp servers this chart deploys itself (argus-mcp-instances.yaml):

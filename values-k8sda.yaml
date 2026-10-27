@@ -1366,6 +1366,9 @@ aiPlatform:
     ## serviceName confirmed by rendering each beamline's computed argus values
     ## through argus-helm-chart directly (helm's naming convention for release
     ## name "argus" + chart name "argus-helm-chart", not simply "argus-mcp").
+    ## The beamlines' own (YAML-backed) ARGUS below serve only the voice agent
+    ## (librechat: false, 2026-10-28): in LibreChat each beamline is answered
+    ## by its Knowledge Hub instance (argusMcpInstances).
     ## Every ARGUS server below and in argusMcpInstances: writes confirmed in
     ## two steps (confirmWrites, on by default) and done as the signed-in user
     ## (forwardUserToken: their INFN AAI token, which ARGUS passes to Olog -
@@ -1379,6 +1382,7 @@ aiPlatform:
         serviceName: argus-argus-helm-chart-argus-mcp
         roomName: sparc-argus-control-room
         forwardUserToken: true
+        librechat: false
         title: "SPARC ARGUS"
         description: "ARGUS accelerator-control assistant for the SPARC beamline."
       - name: euaps-argus
@@ -1386,6 +1390,7 @@ aiPlatform:
         serviceName: argus-argus-helm-chart-argus-mcp
         roomName: euaps-argus-control-room
         forwardUserToken: true
+        librechat: false
         title: "EUAPS ARGUS"
         description: "ARGUS accelerator-control assistant for the EUAPS beamline."
       ## btf keeps running its OWN dedicated LibreChat too (2 BTF-specific
@@ -1397,13 +1402,16 @@ aiPlatform:
         serviceName: argus-argus-helm-chart-argus-mcp
         roomName: btf-argus-control-room
         forwardUserToken: true
+        librechat: false
         title: "BTF ARGUS"
         description: "ARGUS accelerator-control assistant for the BTF beamline."
 
     ## same RAGFLOW instance BTF's own argus already uses
     ## (epik8s-btf/deploy/values.yaml epicsConfiguration.services.argus.argusMcp.backends.ragflow).
+    ## Off (2026-10-28): it had no beamline and only duplicated "RAG
+    ## Documentation" (RAGFLOW) and "Loki Logs" in LibreChat's menu.
     argusMcp:
-      enabled: true
+      enabled: false
       ## The central ARGUS's own LibreChat entry: writes confirmed in two
       ## steps and done as the signed-in user, like the servers above.
       librechatHeaders:
