@@ -1426,18 +1426,17 @@ aiPlatform:
     argusMcpInstances:
       knowledgeHub:
         url: "https://argus-hub-api.90.147.174.30.myip.cloud.infn.it/mcp"
-      ## Live backends, the same for both halves of the comparison. These
-      ## pods run in ai-platform, so CA search can't broadcast to BTF's IOCs:
-      ## it goes to BTF's CA gateway Service instead (epik8s-btf services.gateway).
+      ## Shared by every instance. What is per beamline - its CA gateway and
+      ## namespace - is in each instance below: these pods run in
+      ## ai-platform, so CA search can't broadcast to a beamline's IOCs and
+      ## goes to that beamline's CA gateway Service instead.
       defaults:
         backends:
-          epics:
-            caAddrList: "gateway.btf.svc.cluster.local"
-            caAutoAddrList: false
-          kubernetes:
-            namespaceDefault: "btf"
           loki:
             baseUrl: "http://epik8s-platform-loki.logging.svc.cluster.local:3100"
+      ## One pair per beamline: the same questions answered from the legacy
+      ## sources (deploy YAML from git, RAGFLOW, Olog) and from the ARGUS
+      ## Knowledge Hub. Live backends are identical within a pair.
       instances:
         - name: btf-argus-yaml
           source: yaml
@@ -1445,6 +1444,8 @@ aiPlatform:
           description: "ARGUS for BTF: devices from epik8s-btf's deploy YAML, documentation from RAGFLOW, logbook from Olog."
           argusMcp:
             backends:
+              epics: {caAddrList: "gateway.btf.svc.cluster.local", caAutoAddrList: false}
+              kubernetes: {namespaceDefault: "btf"}
               git:
                 gitlab:
                   baseUrl: "https://baltig.infn.it"
@@ -1464,6 +1465,87 @@ aiPlatform:
           workspaces: ["btf"]
           title: "BTF ARGUS Knowledge Hub"
           description: "ARGUS for BTF: devices, documentation and logbook from the ARGUS Knowledge Hub (workspace btf)."
+          argusMcp:
+            backends:
+              epics: {caAddrList: "gateway.btf.svc.cluster.local", caAutoAddrList: false}
+              kubernetes: {namespaceDefault: "btf"}
+
+        - name: euaps-argus-yaml
+          source: yaml
+          title: "EUAPS ARGUS YAML"
+          description: "ARGUS for EUAPS: devices from epik8s-euaps's deploy YAML, documentation from RAGFLOW, logbook from Olog."
+          argusMcp:
+            backends:
+              epics: {caAddrList: "gateway.euaps.svc.cluster.local", caAutoAddrList: false}
+              kubernetes: {namespaceDefault: "euaps"}
+              git:
+                gitlab:
+                  baseUrl: "https://baltig.infn.it"
+                defaultRepos: ["https://baltig.infn.it/lnf-da-control/epik8s-euaps.git"]
+                defaultRef: "devel"   # epik8s-euaps's gitrev
+              documentation:
+                backend: ragflow
+              ragflow:
+                baseUrl: "https://ragflow-api-lnf.131.154.99.90.myip.cloud.infn.it"
+                datasetNames: "Controlli,euaps"
+              logbook:
+                ## EUAPS's Olog API, plain HTTP on 8080 in-cluster (EUAPS's own
+                ## ARGUS uses the euaps-olog ingress); no auth for reads.
+                baseUrl: "http://olog.euaps.svc.cluster.local:8080"
+        - name: euaps-argus-hub
+          source: knowledgeHub
+          workspaces: ["euaps"]
+          title: "EUAPS ARGUS Knowledge Hub"
+          ## The hub's euaps workspace has EUAPS's Control Devices but no
+          ## logbook yet: EUAPS's Olog isn't uploaded to the hub (BTF's is,
+          ## by its argusUpload job), so logbook questions find nothing here.
+          description: "ARGUS for EUAPS: devices, documentation and logbook from the ARGUS Knowledge Hub (workspace euaps)."
+          argusMcp:
+            backends:
+              epics: {caAddrList: "gateway.euaps.svc.cluster.local", caAutoAddrList: false}
+              kubernetes: {namespaceDefault: "euaps"}
+
+        ## SPARC (2026-10-27): two things still to provide, both credentials,
+        ## no values change needed once they exist:
+        ##  - SPARC's Olog refuses unauthenticated reads (403, in-cluster and
+        ##    through sparc-olog's ingress - SPARC's own ARGUS fails the same
+        ##    way): set logbook.username below and add SPARC_LOGBOOK_PASSWORD
+        ##    to argus-mcp-instances-credentials. Its own key, so the BTF and
+        ##    EUAPS instances never send it.
+        ##  - The hub's sparc workspace must be readable by KNOWLEDGE_HUB_TOKEN:
+        ##    an administrator's token (Read + Administer, no fixed workspace)
+        ##    reads it; the current one reaches only btf/euaps/default/lnl.
+        - name: sparc-argus-yaml
+          source: yaml
+          title: "SPARC ARGUS YAML"
+          description: "ARGUS for SPARC: devices from epik8-sparc's deploy YAML, documentation from RAGFLOW, logbook from Olog."
+          argusMcp:
+            backends:
+              epics: {caAddrList: "gateway.sparc.svc.cluster.local", caAutoAddrList: false}
+              kubernetes: {namespaceDefault: "sparc"}
+              git:
+                gitlab:
+                  baseUrl: "https://baltig.infn.it"
+                defaultRepos: ["https://baltig.infn.it/lnf-da-control/epik8-sparc.git"]
+                defaultRef: "main"   # epik8-sparc's gitrev
+              documentation:
+                backend: ragflow
+              ragflow:
+                baseUrl: "https://ragflow-api-lnf.131.154.99.90.myip.cloud.infn.it"
+                datasetNames: "Controlli,sparc"
+              logbook:
+                baseUrl: "http://olog.sparc.svc.cluster.local:8080"
+                username: ""   # SPARC Olog read account - see above
+                passwordSecretKey: "SPARC_LOGBOOK_PASSWORD"
+        - name: sparc-argus-hub
+          source: knowledgeHub
+          workspaces: ["sparc"]
+          title: "SPARC ARGUS Knowledge Hub"
+          description: "ARGUS for SPARC: devices, documentation and logbook from the ARGUS Knowledge Hub (workspace sparc)."
+          argusMcp:
+            backends:
+              epics: {caAddrList: "gateway.sparc.svc.cluster.local", caAutoAddrList: false}
+              kubernetes: {namespaceDefault: "sparc"}
 
   ## Not used on k8sda (2026-10-27): documentation search goes through
   ## RAGFLOW and the ARGUS Knowledge Hub, not this Confluence->qdrant
