@@ -7,16 +7,12 @@
 ##
 ##   kubectl apply -f argocd/epik8s-platform-ai-platform.yaml
 ##
-## Manual sync on purpose, until git and the cluster agree again: on
-## 2026-10-27 the domain rendered workloads that don't run here (argus-vllm,
-## litellm, qdrant, embeddings, the Kubernetes MCP profiles, the confluence
-## ingester) and lacked live settings (voice-token's OIDC_* and
-## ROOM_BEAMLINES_JSON). A sync would have deployed the first and removed
-## the second. Review `argocd app diff epik8s-platform-ai-platform`, fix git,
-## sync by hand; once the diff is empty, enable
-##   syncPolicy.automated: {prune: false, selfHeal: true}
-## (prune stays false: removing something from git never deletes it by
-## itself.)
+## Automated sync, self-healing, never pruning. It started out manual
+## (2026-10-27), while git and the cluster disagreed: the domain rendered
+## workloads that didn't run here and lacked voice-token's OIDC settings.
+## Git was brought in line, synced once by hand, and the diff was empty.
+## prune stays false: removing something from git never deletes it by
+## itself - a person prunes, after reading `argocd app diff`.
 ##
 ## No resources-finalizer, deliberately: deleting this Application only
 ## removes the Application, and what it manages stays. Namespace, PVCs and
@@ -47,6 +43,9 @@ spec:
     server: https://kubernetes.default.svc
     namespace: ai-platform
   syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
     syncOptions:
       - CreateNamespace=false
       - PruneLast=true
