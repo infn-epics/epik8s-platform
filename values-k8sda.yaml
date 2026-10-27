@@ -1366,6 +1366,10 @@ aiPlatform:
     ## serviceName confirmed by rendering each beamline's computed argus values
     ## through argus-helm-chart directly (helm's naming convention for release
     ## name "argus" + chart name "argus-helm-chart", not simply "argus-mcp").
+    ## Every ARGUS server below and in argusMcpInstances: writes confirmed in
+    ## two steps (confirmWrites, on by default) and done as the signed-in user
+    ## (forwardUserToken: their INFN AAI token, which ARGUS passes to Olog -
+    ## needs OPENID_REUSE_TOKENS=true in argus-librechat-credentials).
     argusMcpServers:
       ## sparc and euaps run argus-mcp only (librechat.enabled: false, see
       ## epik8-sparc/deploy/values.yaml and epik8s-euaps/deploy/values.yaml) -
@@ -1374,7 +1378,6 @@ aiPlatform:
         namespace: sparc
         serviceName: argus-argus-helm-chart-argus-mcp
         roomName: sparc-argus-control-room
-        ## SPARC's Olog refuses anonymous reads: read it as the signed-in user.
         forwardUserToken: true
         title: "SPARC ARGUS"
         description: "ARGUS accelerator-control assistant for the SPARC beamline."
@@ -1382,6 +1385,7 @@ aiPlatform:
         namespace: euaps
         serviceName: argus-argus-helm-chart-argus-mcp
         roomName: euaps-argus-control-room
+        forwardUserToken: true
         title: "EUAPS ARGUS"
         description: "ARGUS accelerator-control assistant for the EUAPS beamline."
       ## btf keeps running its OWN dedicated LibreChat too (2 BTF-specific
@@ -1392,6 +1396,7 @@ aiPlatform:
         namespace: btf
         serviceName: argus-argus-helm-chart-argus-mcp
         roomName: btf-argus-control-room
+        forwardUserToken: true
         title: "BTF ARGUS"
         description: "ARGUS accelerator-control assistant for the BTF beamline."
 
@@ -1399,6 +1404,11 @@ aiPlatform:
     ## (epik8s-btf/deploy/values.yaml epicsConfiguration.services.argus.argusMcp.backends.ragflow).
     argusMcp:
       enabled: true
+      ## The central ARGUS's own LibreChat entry: writes confirmed in two
+      ## steps and done as the signed-in user, like the servers above.
+      librechatHeaders:
+        X-Argus-Confirm-Writes: "true"
+        X-Argus-User-Token: "{{LIBRECHAT_OPENID_ACCESS_TOKEN}}"
       backends:
         ragflow:
           baseUrl: "https://ragflow-api-lnf.131.154.99.90.myip.cloud.infn.it"
@@ -1442,6 +1452,7 @@ aiPlatform:
       instances:
         - name: btf-argus-yaml
           source: yaml
+          forwardUserToken: true
           title: "BTF ARGUS YAML"
           description: "ARGUS for BTF: devices from epik8s-btf's deploy YAML, documentation from RAGFLOW, logbook from Olog."
           argusMcp:
@@ -1464,6 +1475,7 @@ aiPlatform:
                 baseUrl: "http://olog.btf.svc.cluster.local:8080"
         - name: btf-argus-hub
           source: knowledgeHub
+          forwardUserToken: true
           workspaces: ["btf"]
           title: "BTF ARGUS Knowledge Hub"
           description: "ARGUS for BTF: devices, documentation and logbook from the ARGUS Knowledge Hub (workspace btf)."
@@ -1471,9 +1483,13 @@ aiPlatform:
             backends:
               epics: {caAddrList: "gateway.btf.svc.cluster.local", caAutoAddrList: false}
               kubernetes: {namespaceDefault: "btf"}
+              ## Logbook reads stay on the hub's documents; reading one entry to
+              ## change it, and writing, go to BTF's Olog as the signed-in user.
+              logbook: {baseUrl: "http://olog.btf.svc.cluster.local:8080"}
 
         - name: euaps-argus-yaml
           source: yaml
+          forwardUserToken: true
           title: "EUAPS ARGUS YAML"
           description: "ARGUS for EUAPS: devices from epik8s-euaps's deploy YAML, documentation from RAGFLOW, logbook from Olog."
           argusMcp:
@@ -1496,6 +1512,7 @@ aiPlatform:
                 baseUrl: "http://olog.euaps.svc.cluster.local:8080"
         - name: euaps-argus-hub
           source: knowledgeHub
+          forwardUserToken: true
           workspaces: ["euaps"]
           title: "EUAPS ARGUS Knowledge Hub"
           ## The hub's euaps workspace has EUAPS's Control Devices but no
@@ -1506,6 +1523,9 @@ aiPlatform:
             backends:
               epics: {caAddrList: "gateway.euaps.svc.cluster.local", caAutoAddrList: false}
               kubernetes: {namespaceDefault: "euaps"}
+              ## Logbook reads stay on the hub's documents; reading one entry to
+              ## change it, and writing, go to EUAPS's Olog as the signed-in user.
+              logbook: {baseUrl: "http://olog.euaps.svc.cluster.local:8080"}
 
         ## SPARC's Olog refuses unauthenticated reads (403, in-cluster and
         ## through sparc-olog's ingress), so sparc-argus-yaml reads it as the
@@ -1538,6 +1558,7 @@ aiPlatform:
                 passwordSecretKey: "SPARC_LOGBOOK_PASSWORD"
         - name: sparc-argus-hub
           source: knowledgeHub
+          forwardUserToken: true
           workspaces: ["sparc"]
           title: "SPARC ARGUS Knowledge Hub"
           description: "ARGUS for SPARC: devices, documentation and logbook from the ARGUS Knowledge Hub (workspace sparc)."
@@ -1545,6 +1566,9 @@ aiPlatform:
             backends:
               epics: {caAddrList: "gateway.sparc.svc.cluster.local", caAutoAddrList: false}
               kubernetes: {namespaceDefault: "sparc"}
+              ## Logbook reads stay on the hub's documents; reading one entry to
+              ## change it, and writing, go to SPARC's Olog as the signed-in user.
+              logbook: {baseUrl: "http://olog.sparc.svc.cluster.local:8080"}
 
   ## Not used on k8sda (2026-10-27): documentation search goes through
   ## RAGFLOW and the ARGUS Knowledge Hub, not this Confluence->qdrant

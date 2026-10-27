@@ -17,3 +17,20 @@ Usage, under metadata:
 {{- define "epik8s-platform.keepOnDelete" -}}
 argocd.argoproj.io/sync-options: Delete=false,Prune=false
 {{- end -}}
+
+{{/*
+The headers LibreChat sends to one ARGUS MCP server (an argusMcpServers or
+argusMcpInstances entry), as JSON: X-Argus-Confirm-Writes unless the entry
+sets confirmWrites: false, X-Argus-User-Token when it sets forwardUserToken.
+See ai-platform/librechat.yaml.
+*/}}
+{{- define "epik8s-platform.argusHeaders" -}}
+{{- $h := dict -}}
+{{- if ne (toString .confirmWrites) "false" -}}
+{{- $_ := set $h "X-Argus-Confirm-Writes" "true" -}}
+{{- end -}}
+{{- if .forwardUserToken -}}
+{{- $_ := set $h "X-Argus-User-Token" "{{LIBRECHAT_OPENID_ACCESS_TOKEN}}" -}}
+{{- end -}}
+{{- toJson $h -}}
+{{- end -}}
