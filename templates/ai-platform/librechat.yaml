@@ -52,7 +52,14 @@ A dedicated header, not Authorization: ARGUS passes it on, it doesn't check it.
 Unlike the {{LIBRECHAT_BODY_*}} placeholders noted above, OpenID ones resolve
 from the user's session, so they don't break the manual "Initialize" action.
 */ -}}
-{{- $userTokenHeaders := dict "X-Argus-User-Token" "{{LIBRECHAT_OPENID_ACCESS_TOKEN}}" }}
+{{- /*
+confirmWrites (default true; set false to opt out): X-Argus-Confirm-Writes,
+so argus-mcp-server runs every write tool (set_pv, restart_ioc, logbook
+entries...) in two steps - a preview and a one-time confirmation_id first,
+the write only when called again with it. LibreChat has no approval step of
+its own. The voice agent doesn't send it (it has its own operator gate).
+Both headers come from epik8s-platform.argusHeaders (_helpers.tpl).
+*/ -}}
 {{- range $lc.argusMcpServers }}
 {{- $entry := dict
       "enabled" true
@@ -62,8 +69,9 @@ from the user's session, so they don't break the manual "Initialize" action.
       "title" (.title | default .name)
       "description" (.description | default (printf "ARGUS accelerator-control assistant for %s." .name))
 }}
-{{- if .forwardUserToken }}
-{{- $_ := set $entry "headers" (deepCopy $userTokenHeaders) }}
+{{- $headers := include "epik8s-platform.argusHeaders" . | fromJson }}
+{{- if $headers }}
+{{- $_ := set $entry "headers" $headers }}
 {{- end }}
 {{- $_ := set $mcpServers .name $entry }}
 {{- end }}
@@ -90,8 +98,9 @@ reduced to those here, whatever values.yaml says.
       "title" (regexReplaceAll "[^A-Za-z0-9 ]+" (.title | default (printf "%s %s" .name $sourceLabel)) " " | trim)
       "description" (.description | default (printf "ARGUS accelerator-control assistant, knowledge from %s." $sourceLabel))
 }}
-{{- if .forwardUserToken }}
-{{- $_ := set $entry "headers" (deepCopy $userTokenHeaders) }}
+{{- $headers := include "epik8s-platform.argusHeaders" . | fromJson }}
+{{- if $headers }}
+{{- $_ := set $entry "headers" $headers }}
 {{- end }}
 {{- $_ := set $mcpServers .name $entry }}
 {{- end }}
