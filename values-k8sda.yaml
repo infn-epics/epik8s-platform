@@ -1406,7 +1406,7 @@ aiPlatform:
       instances:
         - name: btf-argus-yaml
           source: yaml
-          title: "BTF ARGUS (YAML)"
+          title: "BTF ARGUS YAML"
           description: "ARGUS for BTF: devices from epik8s-btf's deploy YAML, documentation from RAGFLOW, logbook from Olog."
           argusMcp:
             backends:
@@ -1427,7 +1427,7 @@ aiPlatform:
         - name: btf-argus-hub
           source: knowledgeHub
           workspaces: ["btf"]
-          title: "BTF ARGUS (Knowledge Hub)"
+          title: "BTF ARGUS Knowledge Hub"
           description: "ARGUS for BTF: devices, documentation and logbook from the ARGUS Knowledge Hub (workspace btf)."
 
   confluenceIngester:
