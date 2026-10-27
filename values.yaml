@@ -750,6 +750,19 @@ aiPlatform:
     ## and owns the Secret itself (fine for auth.mode: basic, but oauth2
     ## needs a real client secret this chart has no other way to pass through).
     existingSecret: ""
+    ## StorageClass for LibreChat's three volumes (MongoDB, Meilisearch, the
+    ## uploaded-images volume). Empty = the cluster default. Set it to a
+    ## Retain class (k8sda: local-path-retain) so deleting the LibreChat
+    ## Application can't wipe the data. A claim's class is immutable: an
+    ## existing volume only moves to it by deleting its claim and resyncing.
+    storageClass: ""
+    ## An external MongoDB for LibreChat instead of the one argus-helm-chart's
+    ## LibreChat subchart deploys (which is then not deployed at all: no pod,
+    ## no volume). Point it at a database that outlives LibreChat's own
+    ## Application and is already backed up - k8sda: the backend domain's
+    ## MongoDB, dumped nightly by clusterBackup.centralServices.mongodb.
+    ## Empty = LibreChat's own MongoDB.
+    mongoUri: ""
     ingress:
       enabled: false
       className: nginx

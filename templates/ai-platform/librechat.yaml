@@ -96,6 +96,9 @@ client secret, so set both from publicUrl whenever it's non-empty.
 {{- $_ := set $configEnv "HTTPS_PROXY" $.Values.aiPlatform.proxy.httpsProxy }}
 {{- $_ := set $configEnv "NO_PROXY" $.Values.aiPlatform.proxy.noProxy }}
 {{- end }}
+{{- if $lc.mongoUri }}
+{{- $_ := set $configEnv "MONGO_URI" $lc.mongoUri }}
+{{- end }}
 {{- if $lc.publicUrl }}
 {{- $_ := set $configEnv "DOMAIN_CLIENT" $lc.publicUrl }}
 {{- $_ := set $configEnv "DOMAIN_SERVER" $lc.publicUrl }}
@@ -110,6 +113,23 @@ create an account on first OIDC login. Only rendered when explicitly enabled.
 {{- end }}
 {{- if $configEnv }}
 {{- $_ := set $librechatSub "librechat" (dict "configEnv" $configEnv) }}
+{{- end }}
+{{- /*
+One StorageClass for LibreChat's volumes, in the places the upstream chart
+and its MongoDB/Meilisearch subcharts each look for it. With mongoUri set
+(MONGO_URI above) the subchart's MongoDB isn't deployed at all.
+*/ -}}
+{{- if $lc.mongoUri }}
+{{- $_ := set $librechatSub "mongodb" (dict "enabled" false) }}
+{{- end }}
+{{- if $lc.storageClass }}
+{{- if not $lc.mongoUri }}
+{{- $_ := set $librechatSub "mongodb" (dict "persistence" (dict "storageClass" $lc.storageClass)) }}
+{{- end }}
+{{- $_ := set $librechatSub "meilisearch" (dict "persistence" (dict "storageClass" $lc.storageClass)) }}
+{{- $inner := $librechatSub.librechat | default dict }}
+{{- $_ := set $inner "imageVolume" (dict "storageClassName" $lc.storageClass) }}
+{{- $_ := set $librechatSub "librechat" $inner }}
 {{- end }}
 {{- /*
 Default: let argus-helm-chart generate+own its own credentials Secret. When

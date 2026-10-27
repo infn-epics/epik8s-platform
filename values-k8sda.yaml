@@ -300,6 +300,16 @@ networking:
 storage:
   enabled: true
   classes:
+    ## The node-local provisioner local-path (the cluster default) uses, but
+    ## Retain: a volume whose claim is deleted - e.g. by deleting or pruning
+    ## the Argo CD Application that owns it - is left Released with its data
+    ## instead of being wiped by local-path's delete helper. For small
+    ## stateful services that must not live on NFS (Meilisearch's LMDB).
+    ## A Released volume is reattached by hand (clear its claimRef).
+    - name: local-path-retain
+      provisioner: rancher.io/local-path
+      reclaimPolicy: Retain
+      volumeBindingMode: WaitForFirstConsumer
     - name: nfs20t
       provisioner: nfs.csi.k8s.io
       reclaimPolicy: Retain
@@ -1098,6 +1108,15 @@ aiPlatform:
     ## The OPENID_CLIENT_SECRET remains out of band in the
     ## argus-librechat-credentials Secret; never add it to this file.
     existingSecret: argus-librechat-credentials
+    ## Retain, so deleting this Application never again wipes LibreChat's
+    ## users and conversations (2026-10-27) - see storage.classes.
+    storageClass: local-path-retain
+    ## LibreChat's accounts and conversations live in the backend domain's
+    ## MongoDB (database LibreChat): outside this Application, so deleting it
+    ## can't touch them, on Retain NFS (archiver-lts), and in the nightly
+    ## cluster-backup dump. That MongoDB runs without authentication, like
+    ## LibreChat's own did - see README "LibreChat's data".
+    mongoUri: "mongodb://mongodb.backend.svc.cluster.local:27017/LibreChat"
     publicUrl: "https://argus.k8sda.lnf.infn.it"
     ## OIDC-only: accounts are created on first INFN SSO login.
     allowSocialRegistration: true
