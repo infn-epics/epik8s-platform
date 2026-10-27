@@ -212,10 +212,9 @@ it renders `values-k8sda.yaml` + `values-domain-ai-platform.yaml` from
 Applications. It replaces the hand-run `helm template | kubectl apply`.
 Apply it once with `kubectl apply -f`.
 
-- **Sync is manual for now.** Git and the cluster had drifted (see the
-  manifest's header comment), so review `argocd app diff`, fix git, then
-  sync. Once the diff is empty, enable `automated: {prune: false, selfHeal:
-  true}`.
+- **Sync is automated, with self-heal and without pruning.** A change on
+  `main` rolls out by itself. Removing something from git leaves it
+  running until someone prunes it after reading `argocd app diff`.
 - **Deleting is safe by construction.** The parent has no resources
   finalizer. The Namespace, every PVC (including LibreChat's, through its
   subcharts) and the child Applications carry
