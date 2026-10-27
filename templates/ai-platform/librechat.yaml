@@ -41,15 +41,31 @@ Revisit only if LibreChat adds a way to make body-scoped placeholders
 optional. Matches argus-helm-chart's own self-registered "argus" entry,
 which has the same note.
 */ -}}
+{{- /*
+forwardUserToken (argusMcpServers[] and argusMcpInstances.instances[]): send
+the signed-in user's own OpenID access token - their INFN AAI login - to
+that ARGUS server on every tool call, which passes it on to Olog so logbook
+reads and writes happen as that person (argus-mcp-server: X-Argus-User-Token).
+Needs OPENID_REUSE_TOKENS=true in LibreChat's Secret; without it LibreChat
+has no token to put in and ARGUS falls back to its configured Olog account.
+A dedicated header, not Authorization: ARGUS passes it on, it doesn't check it.
+Unlike the {{LIBRECHAT_BODY_*}} placeholders noted above, OpenID ones resolve
+from the user's session, so they don't break the manual "Initialize" action.
+*/ -}}
+{{- $userTokenHeaders := dict "X-Argus-User-Token" "{{LIBRECHAT_OPENID_ACCESS_TOKEN}}" }}
 {{- range $lc.argusMcpServers }}
-{{- $_ := set $mcpServers .name (dict
+{{- $entry := dict
       "enabled" true
       "type" "sse"
       "url" (printf "http://%s.%s.svc.cluster.local:%v%s" .serviceName .namespace (.port | default 8000) (.path | default "/sse"))
       "chatMenu" true
       "title" (.title | default .name)
       "description" (.description | default (printf "ARGUS accelerator-control assistant for %s." .name))
-    ) }}
+}}
+{{- if .forwardUserToken }}
+{{- $_ := set $entry "headers" (deepCopy $userTokenHeaders) }}
+{{- end }}
+{{- $_ := set $mcpServers .name $entry }}
 {{- end }}
 {{- /*
 argus-mcp servers this chart deploys itself (argus-mcp-instances.yaml):
@@ -66,14 +82,18 @@ reduced to those here, whatever values.yaml says.
 {{- $source := .source | default "yaml" }}
 {{- $sourceLabel := ternary "Knowledge Hub" "YAML" (eq $source "knowledgeHub") }}
 {{- $port := ((.argusMcp | default dict).service | default dict).port | default 8000 }}
-{{- $_ := set $mcpServers .name (dict
+{{- $entry := dict
       "enabled" true
       "type" "sse"
       "url" (printf "http://%s-argus-mcp.%s.svc.cluster.local:%v/sse" .name $ns $port)
       "chatMenu" true
       "title" (regexReplaceAll "[^A-Za-z0-9 ]+" (.title | default (printf "%s %s" .name $sourceLabel)) " " | trim)
       "description" (.description | default (printf "ARGUS accelerator-control assistant, knowledge from %s." $sourceLabel))
-    ) }}
+}}
+{{- if .forwardUserToken }}
+{{- $_ := set $entry "headers" (deepCopy $userTokenHeaders) }}
+{{- end }}
+{{- $_ := set $mcpServers .name $entry }}
 {{- end }}
 {{- /*
 LibreChat's own outbound calls (e.g. to external AI-Gateway LLM endpoints) need
