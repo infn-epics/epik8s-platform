@@ -52,6 +52,26 @@ which has the same note.
     ) }}
 {{- end }}
 {{- /*
+argus-mcp servers this chart deploys itself (argus-mcp-instances.yaml):
+same registration as argusMcpServers above, with the Service name that
+template's fullnameOverride gives ("<name>-argus-mcp") and the title saying
+which knowledge source the instance answers from, so the two halves of a
+comparison are told apart in the chat menu.
+*/ -}}
+{{- range ($lc.argusMcpInstances | default dict).instances }}
+{{- $source := .source | default "yaml" }}
+{{- $sourceLabel := ternary "Knowledge Hub" "YAML" (eq $source "knowledgeHub") }}
+{{- $port := ((.argusMcp | default dict).service | default dict).port | default 8000 }}
+{{- $_ := set $mcpServers .name (dict
+      "enabled" true
+      "type" "sse"
+      "url" (printf "http://%s-argus-mcp.%s.svc.cluster.local:%v/sse" .name $ns $port)
+      "chatMenu" true
+      "title" (.title | default (printf "%s (%s)" .name $sourceLabel))
+      "description" (.description | default (printf "ARGUS accelerator-control assistant, knowledge from %s." $sourceLabel))
+    ) }}
+{{- end }}
+{{- /*
 LibreChat's own outbound calls (e.g. to external AI-Gateway LLM endpoints) need
 the corporate proxy, same as BTF's own argus release already sets via
 librechat.librechat.configEnv - without it, requests to external baseURLs just

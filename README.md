@@ -174,6 +174,36 @@ entries, and points `llm.endpoints` at the already-deployed `litellm` gateway
 `vllmService` "facility-wide singleton" stays disabled, since this chart
   already has that singleton as `aiPlatform.vllm`).
 
+### ARGUS knowledge-source comparison (`argusMcpInstances`)
+
+`aiPlatform.librechat.argusMcpInstances` deploys extra argus-mcp servers,
+each as its own ArgoCD Application of `argus-helm-chart` (MCP only, in the
+`ai-platform` namespace), and registers them into the central LibreChat.
+Each instance picks where ARGUS gets its knowledge:
+
+| `source` | Device inventory (`list_beamline_devices`) | Documentation | Logbook reads |
+|---|---|---|---|
+| `yaml` | the beamline's deploy YAML in git | RAGFLOW / local, as configured | Olog |
+| `knowledgeHub` | ARGUS Knowledge Hub Control Devices | Knowledge Hub | Knowledge Hub (Olog mirror) |
+
+Run the same beamline once with each source and ask both servers the same
+question (the chat menu titles say which is which, e.g. "BTF ARGUS (YAML)"
+and "BTF ARGUS (Knowledge Hub)"). Tool names and result shapes are the same
+for both, so differences in the answers come from the sources. Live
+backends (EPICS, archiver, Kubernetes, Loki) come from `defaults` and are
+shared. An instance's own `argusMcp` overrides its source's preset, e.g. a
+hub-backed inventory with RAGFLOW documentation.
+
+The hub is reached with an ARGUS Knowledge Hub **personal access token
+made by an administrator with the Read and Administer scopes, not fixed to
+a workspace**: that token reads every workspace, and `workspaces:` (empty =
+all) chooses which ones the instance asks in. It lives only in the
+out-of-band Secret `argusMcpInstances.credentialsSecret`, never in values;
+see the `kubectl create secret` command in `values.yaml`. Instances never
+render a Secret of their own, because the central LibreChat release already
+owns `argus-librechat-credentials` in the same namespace. For a worked BTF
+example, see the commented `argusMcpInstances` in `values-k8sda.yaml`.
+
 ### Kubernetes MCP profiles
 
 `containers/kubernetes-mcp-server` is deployed as two deliberately separate

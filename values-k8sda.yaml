@@ -1380,6 +1380,45 @@ aiPlatform:
         ## decision (new dedicated read-only account vs. reusing an existing
         ## one) before this can be set - see PR/session notes.
 
+    ## BTF answered twice, to compare knowledge sources (values.yaml
+    ## argusMcpInstances): device inventory from epik8s-btf's deploy YAML +
+    ## RAGFLOW documentation vs. both from the ARGUS Knowledge Hub above.
+    ## Commented out until the out-of-band Secret exists in ai-platform:
+    ##   kubectl -n ai-platform create secret generic argus-mcp-instances-credentials \
+    ##     --from-literal=KNOWLEDGE_HUB_TOKEN='<admin personal token: Read + Administer, no fixed workspace>' \
+    ##     --from-literal=RAGFLOW_API_KEY='...' --from-literal=GITLAB_TOKEN='...'
+    ## and BTF's hub workspace id is confirmed (list_knowledge_hub_workspaces,
+    ## or the hub's /workspaces/<id>/ addresses).
+    # argusMcpInstances:
+    #   knowledgeHub:
+    #     url: "https://argus-hub-api.90.147.174.30.myip.cloud.infn.it/mcp"
+    #   defaults:
+    #     backends:
+    #       epics:
+    #         caAddrList: ""        # BTF's CA gateway, same as epik8s-btf's own argus
+    #       loki:
+    #         baseUrl: "http://epik8s-platform-loki.logging.svc.cluster.local:3100"
+    #   instances:
+    #     - name: btf-argus-yaml
+    #       source: yaml
+    #       title: "BTF ARGUS (YAML)"
+    #       argusMcp:
+    #         backends:
+    #           git:
+    #             gitlab:
+    #               baseUrl: "https://baltig.infn.it"
+    #             defaultRepos: ["https://baltig.infn.it/lnf-da-control/epik8s-btf.git"]
+    #             defaultRef: "main"   # epik8s-btf's deployed branch (its gitrev)
+    #           documentation:
+    #             backend: ragflow
+    #           ragflow:
+    #             baseUrl: "https://ragflow-api-lnf.131.154.99.90.myip.cloud.infn.it"
+    #             datasetNames: "Controlli,btf"
+    #     - name: btf-argus-hub
+    #       source: knowledgeHub
+    #       workspaces: ["btf"]      # empty = every workspace the token may read
+    #       title: "BTF ARGUS (Knowledge Hub)"
+
   confluenceIngester:
     baseUrl: https://confluence.infn.it
     spaces: LDCG
