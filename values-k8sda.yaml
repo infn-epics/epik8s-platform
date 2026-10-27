@@ -1449,7 +1449,11 @@ aiPlatform:
           title: "BTF ARGUS Knowledge Hub"
           description: "ARGUS for BTF: devices, documentation and logbook from the ARGUS Knowledge Hub (workspace btf)."
 
+  ## Not used on k8sda (2026-10-27): documentation search goes through
+  ## RAGFLOW and the ARGUS Knowledge Hub, not this Confluence->qdrant
+  ## ingester. Settings kept for if it's ever turned back on.
   confluenceIngester:
+    enabled: false
     baseUrl: https://confluence.infn.it
     spaces: LDCG
     sinceDays: "36500"
