@@ -8,10 +8,11 @@ metadata:
   name: mcp-config
   namespace: {{ $ns }}
 data:
-  embeddings-url: {{ $mcp.embeddingsUrl | quote }}
+  ## Only what an MCP server here reads: the Kubernetes MCP profiles take
+  ## prometheus-url. (embeddings-url, qdrant-url and rag-default-collection
+  ## were never read by anything and were removed on 2026-10-27; rag-mcp
+  ## searches RAGFLOW.)
   prometheus-url: {{ $mcp.prometheusUrl | quote }}
-  qdrant-url: {{ $mcp.qdrantUrl | quote }}
-  rag-default-collection: {{ $mcp.ragDefaultCollection | quote }}
 {{- end }}
 
 {{- /* epics-mcp and git-mcp are currently placeholders (hashicorp/http-echo) on

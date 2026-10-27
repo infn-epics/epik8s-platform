@@ -74,8 +74,19 @@ spec:
               value: {{ $v.tokenTtlSeconds | quote }}
             - name: ALLOWED_ROOMS_JSON
               value: {{ $allowedRooms | uniq | toJson | quote }}
+            {{- /*
+            Gated on requireLogin and Keycloak's address, not on
+            auth.keycloak.enabled: that means "this release deploys Keycloak",
+            which the ai-platform domain overlay sets false (the auth domain
+            deploys it). Gating on it made every ai-platform-domain render
+            drop these three variables - and with them the login requirement -
+            while the hand-applied live Deployment kept them. A required login
+            with no Keycloak to check it against fails the render instead of
+            serving tokens to anyone.
+            */}}
+            {{- if $v.requireLogin }}
             {{- with $.Values.auth.keycloak }}
-            {{- if and .enabled $v.requireLogin }}
+            {{- $_ := required "aiPlatform.voiceToken.requireLogin needs auth.keycloak.hostname" .hostname }}
             ## Keycloak login required to obtain a voice token; each operator
             ## gets a private room "<room>--<user>-<hash>".
             - name: OIDC_ISSUER

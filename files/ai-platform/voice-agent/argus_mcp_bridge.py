@@ -11,7 +11,7 @@ force a restart). See the platform README's "Voice Assistant" section for
 the full write-tool safety writeup. kubernetes-mcp/rag-mcp, by contrast,
 ARE wired via the native integration directly in agent.py, since their
 entire tool surface is read-only by construction (RBAC grants only
-get/list/watch; rag-mcp only ever reads Qdrant) - no filtering needed
+get/list/watch; rag-mcp only ever searches RAGFlow) - no filtering needed
 there.
 
 READ_ONLY_TOOLS is an ALLOWLIST, not a denylist: any tool a future

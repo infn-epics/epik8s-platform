@@ -73,6 +73,8 @@ metadata:
     deploy: ai-platform
     app: argus-mcp
     argus-knowledge-source: {{ $source | lower | quote }}
+  annotations:
+    {{- include "epik8s-platform.keepOnDelete" $ | nindent 4 }}
 spec:
   project: {{ $lc.project }}
   source:

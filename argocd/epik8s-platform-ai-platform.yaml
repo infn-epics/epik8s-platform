@@ -1,0 +1,52 @@
+## The ai-platform domain as one Argo CD Application: everything
+## `helm template ... -f values-k8sda.yaml -f values-domain-ai-platform.yaml`
+## renders - the ai-platform workloads plus the child Applications
+## (LibreChat, argus-mcp-instances) - reconciled from main instead of
+## applied by hand. Same shape as the core and backend domain Applications
+## (docs/runbooks/epik8s-platform-takeover.md). Applied once, by hand:
+##
+##   kubectl apply -f argocd/epik8s-platform-ai-platform.yaml
+##
+## Manual sync on purpose, until git and the cluster agree again: on
+## 2026-10-27 the domain rendered workloads that don't run here (argus-vllm,
+## litellm, qdrant, embeddings, the Kubernetes MCP profiles, the confluence
+## ingester) and lacked live settings (voice-token's OIDC_* and
+## ROOM_BEAMLINES_JSON). A sync would have deployed the first and removed
+## the second. Review `argocd app diff epik8s-platform-ai-platform`, fix git,
+## sync by hand; once the diff is empty, enable
+##   syncPolicy.automated: {prune: false, selfHeal: true}
+## (prune stays false: removing something from git never deletes it by
+## itself.)
+##
+## No resources-finalizer, deliberately: deleting this Application only
+## removes the Application, and what it manages stays. Namespace, PVCs and
+## child Applications additionally carry Delete=false,Prune=false
+## (templates/_helpers.tpl), so even a cascading delete from the UI keeps
+## them.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: epik8s-platform-ai-platform
+  namespace: argocd
+  labels:
+    deploy: ai-platform
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/infn-epics/epik8s-platform.git
+    path: .
+    targetRevision: main
+    helm:
+      ## The release name the domain has always been rendered with by hand,
+      ## so names and labels don't change on the first sync.
+      releaseName: epik8s-platform
+      valueFiles:
+        - values-k8sda.yaml
+        - values-domain-ai-platform.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai-platform
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=false
+      - PruneLast=true
