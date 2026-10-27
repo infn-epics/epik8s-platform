@@ -874,7 +874,7 @@ aiPlatform:
     argusMcp:
       enabled: false
       image:
-        repository: ghcr.io/infn-epics/argus-mcp-server
+        repository: ghcr.io/infn-argus/argus-mcp-server
         tag: latest
       backends:
         documentation:
@@ -897,7 +897,7 @@ aiPlatform:
       ## `argusMcp` is merged over them (it wins), after its source's preset.
       defaults:
         image:
-          repository: ghcr.io/infn-epics/argus-mcp-server
+          repository: ghcr.io/infn-argus/argus-mcp-server
           tag: latest
       ## The hub every `source: knowledgeHub` instance reads from (its MCP
       ## endpoint, e.g. https://argus-hub-api.example.org/mcp).

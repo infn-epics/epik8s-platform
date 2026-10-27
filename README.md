@@ -113,7 +113,7 @@ shows whether every node has actually had the fix applied.
 `aiPlatform.librechat` replaces the old `openwebui` component with a single,
 cluster-wide [LibreChat](https://www.librechat.ai/) instance, deployed via
 [argus-helm-chart](../argus-helm-chart) (LibreChat + optional
-[ARGUS MCP](https://github.com/infn-epics/argus-mcp-server), the
+[ARGUS MCP](https://github.com/infn-argus/argus-mcp-server), the
 accelerator-control MCP server). Unlike every other `ai-platform` component,
 `templates/ai-platform/librechat.yaml` does **not** render a raw manifest or a
 native Helm dependency - `argus-helm-chart` isn't published to any Helm/OCI
