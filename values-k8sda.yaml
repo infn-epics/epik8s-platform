@@ -1468,7 +1468,7 @@ aiPlatform:
           description: "ARGUS for BTF: devices, documentation and logbook from the ARGUS Knowledge Hub (workspace btf)."
           argusMcp:
             backends:
-              epics: {caAddrList: "gateway.btf.svc.cluster.local", caAutoAddrList: false}
+              epics: {caAddrList: "gateway.btf.svc.cluster.local", caAutoAddrList: false, pvaAddrList: "pvagateway.btf.svc.cluster.local"}
               kubernetes: {namespaceDefault: "btf"}
               ## Creating save-and-restore configurations/snapshots as the signed-in
               ## user - the same ingress BTF's own ARGUS uses.
@@ -1488,7 +1488,7 @@ aiPlatform:
           description: "ARGUS for EUAPS: devices, documentation and logbook from the ARGUS Knowledge Hub (workspace euaps)."
           argusMcp:
             backends:
-              epics: {caAddrList: "gateway.euaps.svc.cluster.local", caAutoAddrList: false}
+              epics: {caAddrList: "gateway.euaps.svc.cluster.local", caAutoAddrList: false, pvaAddrList: "pvagateway.euaps.svc.cluster.local"}
               kubernetes: {namespaceDefault: "euaps"}
               ## Logbook reads stay on the hub's documents; reading one entry to
               ## change it, and writing, go to EUAPS's Olog as the signed-in user.
@@ -1502,7 +1502,7 @@ aiPlatform:
           description: "ARGUS for SPARC: devices, documentation and logbook from the ARGUS Knowledge Hub (workspace sparc)."
           argusMcp:
             backends:
-              epics: {caAddrList: "gateway.sparc.svc.cluster.local", caAutoAddrList: false}
+              epics: {caAddrList: "gateway.sparc.svc.cluster.local", caAutoAddrList: false, pvaAddrList: "pvagateway.sparc.svc.cluster.local"}
               kubernetes: {namespaceDefault: "sparc"}
               ## Creating save-and-restore configurations/snapshots as the signed-in
               ## user - the same ingress SPARC's own ARGUS uses.
