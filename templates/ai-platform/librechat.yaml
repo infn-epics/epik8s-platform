@@ -61,6 +61,12 @@ its own. The voice agent doesn't send it (it has its own operator gate).
 Both headers come from epik8s-platform.argusHeaders (_helpers.tpl).
 */ -}}
 {{- /*
+timeout (ms, default 300000) on every ARGUS entry: LibreChat's own default
+(60 s) is shorter than a magnet apply (apply_magnet_set waits on readbacks up
+to three 30 s phases), and when LibreChat stops waiting the tool call goes on
+in ARGUS, writing the machine, while the chat shows an error.
+*/ -}}
+{{- /*
 librechat: false keeps an argusMcpServers entry out of LibreChat's menu
 while the voice agent and voice-token (which bind its roomName to it) keep
 using it.
@@ -74,6 +80,7 @@ using it.
       "chatMenu" true
       "title" (.title | default .name)
       "description" (.description | default (printf "ARGUS accelerator-control assistant for %s." .name))
+      "timeout" (.timeout | default 300000 | int)
 }}
 {{- $headers := include "epik8s-platform.argusHeaders" . | fromJson }}
 {{- if $headers }}
@@ -104,6 +111,7 @@ reduced to those here, whatever values.yaml says.
       "chatMenu" true
       "title" (regexReplaceAll "[^A-Za-z0-9 ]+" (.title | default (printf "%s %s" .name $sourceLabel)) " " | trim)
       "description" (.description | default (printf "ARGUS accelerator-control assistant, knowledge from %s." $sourceLabel))
+      "timeout" (.timeout | default 300000 | int)
 }}
 {{- $headers := include "epik8s-platform.argusHeaders" . | fromJson }}
 {{- if $headers }}

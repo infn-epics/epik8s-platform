@@ -1470,6 +1470,9 @@ aiPlatform:
             backends:
               epics: {caAddrList: "gateway.btf.svc.cluster.local", caAutoAddrList: false, pvaAddrList: "pvagateway.btf.svc.cluster.local"}
               kubernetes: {namespaceDefault: "btf"}
+              ## Archived history, and archiving a magnet set's PVs (archive_magnet_pvs,
+              ## through the appliance's /mgmt/bpl) - the same ingress BTF's own ARGUS uses.
+              archiver: {baseUrl: "http://btf-archiver.k8sda.lnf.infn.it"}
               ## Creating save-and-restore configurations/snapshots as the signed-in
               ## user - the same ingress BTF's own ARGUS uses.
               saverestore: {baseUrl: "http://btf-saveandrestore.k8sda.lnf.infn.it/save-restore"}
@@ -1490,6 +1493,9 @@ aiPlatform:
             backends:
               epics: {caAddrList: "gateway.euaps.svc.cluster.local", caAutoAddrList: false, pvaAddrList: "pvagateway.euaps.svc.cluster.local"}
               kubernetes: {namespaceDefault: "euaps"}
+              ## Archived history, and archiving a magnet set's PVs (archive_magnet_pvs,
+              ## through the appliance's /mgmt/bpl) - the same ingress EUAPS's own ARGUS uses.
+              archiver: {baseUrl: "http://euaps-archiver.k8sda.lnf.infn.it"}
               ## Logbook reads stay on the hub's documents; reading one entry to
               ## change it, and writing, go to EUAPS's Olog as the signed-in user.
               logbook: {baseUrl: "http://olog.euaps.svc.cluster.local:8080"}
@@ -1504,6 +1510,9 @@ aiPlatform:
             backends:
               epics: {caAddrList: "gateway.sparc.svc.cluster.local", caAutoAddrList: false, pvaAddrList: "pvagateway.sparc.svc.cluster.local"}
               kubernetes: {namespaceDefault: "sparc"}
+              ## Archived history, and archiving a magnet set's PVs (archive_magnet_pvs,
+              ## through the appliance's /mgmt/bpl) - the same ingress SPARC's own ARGUS uses.
+              archiver: {baseUrl: "http://sparc-archiver.k8sda.lnf.infn.it"}
               ## Creating save-and-restore configurations/snapshots as the signed-in
               ## user - the same ingress SPARC's own ARGUS uses.
               saverestore: {baseUrl: "http://sparc-saveandrestore.k8sda.lnf.infn.it/save-restore"}
