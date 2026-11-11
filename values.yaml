@@ -927,7 +927,10 @@ aiPlatform:
       ## {name, source: yaml|knowledgeHub, workspaces (knowledgeHub: hub
       ##  workspace ids, empty = every one the token may read), title,
       ##  description, argusMcp (merged over defaults), targetRevision,
-      ##  forwardUserToken, confirmWrites (as in argusMcpServers above)}
+      ##  forwardUserToken, confirmWrites (as in argusMcpServers above),
+      ##  hubAsCaller (knowledgeHub: ask the hub as the signed-in person with
+      ##  their forwarded INFN AAI token, so the hub applies their own roles;
+      ##  needs forwardUserToken, and the hub trusting LibreChat's client)}
       ## The MCP Service is "<name>-argus-mcp" (fullnameOverride: name).
       instances: []
 

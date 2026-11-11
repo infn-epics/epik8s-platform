@@ -37,8 +37,16 @@ inventory from the hub but its documentation from RAGFLOW.
       "inventory" (dict "backend" "knowledge_hub")
       "documentation" (dict "backend" "knowledge_hub")
       "logbook" (dict "backend" "knowledge_hub")
-      "knowledgeHub" (dict "url" $hubUrl "workspaces" (.workspaces | default list))
+      "knowledgeHub" (dict "url" $hubUrl "workspaces" (.workspaces | default list) "asCaller" (.hubAsCaller | default false))
     ) }}
+{{- /*
+hubAsCaller: the hub is asked as the person behind each call, with the INFN AAI token LibreChat forwards
+(argus-mcp-server KNOWLEDGE_HUB_AS_CALLER), so it applies their roles. That token only arrives with
+forwardUserToken.
+*/ -}}
+{{- if and .hubAsCaller (not .forwardUserToken) }}
+{{- fail (printf "aiPlatform.librechat.argusMcpInstances.instances[%s].hubAsCaller needs forwardUserToken: true" $name) }}
+{{- end }}
 {{- else }}
 {{- fail (printf "aiPlatform.librechat.argusMcpInstances.instances[%s].source must be yaml or knowledgeHub, not %q" $name $source) }}
 {{- end }}
