@@ -1329,10 +1329,12 @@ aiPlatform:
     ## ibek IOC tools; read-only) - a different program from the beamline
     ## argus-mcp servers below, running on INFN Cloud, so a plain mcpServers
     ## entry merged with values.yaml's defaults (not an argusMcpServers one).
-    ## Each user enters their own ARGUS personal access token (My account ->
-    ## Personal access tokens, read scope) and the workspace to ask in, so
-    ## ARGUS answers with that person's own permissions. Both are needed: an
-    ## unanswered placeholder would reach ARGUS as literal text.
+    ## Called with each user's own INFN AAI access token (LibreChat's
+    ## OpenID login, OPENID_REUSE_TOKENS=true), so ARGUS answers with that
+    ## person's roles - the same account as their ARGUS web login, nothing
+    ## to paste. The hub trusts LibreChat's client (OIDC_AUDIENCE
+    ## "argus-knowledge-hub,argus-librechat", ARGUS >= 1.35.91). No fixed
+    ## workspace: list_workspaces and each tool's `workspace` argument choose.
     mcpServers:
       argus-hub:
         enabled: true
@@ -1354,15 +1356,7 @@ aiPlatform:
           optional `workspace` argument asks in another one. Use graph_neighbours for what spans
           records, search_knowledge for what is written. Everything is read-only.
         headers:
-          Authorization: "Bearer {{ARGUS_HUB_TOKEN}}"
-          X-Workspace-Id: "{{ARGUS_HUB_WORKSPACE}}"
-        customUserVars:
-          ARGUS_HUB_TOKEN:
-            title: "ARGUS personal access token"
-            description: "In ARGUS: My account -> Personal access tokens, with read scope (starts with argus_pat_)."
-          ARGUS_HUB_WORKSPACE:
-            title: "ARGUS workspace"
-            description: "The id of the workspace to ask in, as in ARGUS addresses (/workspaces/<id>/...). Change it to ask in another one."
+          Authorization: "Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}"
     ## serviceName confirmed by rendering each beamline's computed argus values
     ## through argus-helm-chart directly (helm's naming convention for release
     ## name "argus" + chart name "argus-helm-chart", not simply "argus-mcp").
@@ -1438,11 +1432,12 @@ aiPlatform:
     ## BTF answered twice, to compare knowledge sources (values.yaml
     ## argusMcpInstances): device inventory from epik8s-btf's deploy YAML +
     ## RAGFLOW documentation + Olog vs. all three from the ARGUS Knowledge
-    ## Hub above (workspace "btf"). Credentials come from the out-of-band
-    ## Secret argus-mcp-instances-credentials in ai-platform
-    ## (KNOWLEDGE_HUB_TOKEN: an administrator's personal token, Read +
-    ## Administer, no fixed workspace; RAGFLOW_API_KEY). epik8s-btf is a
-    ## public baltig repo, so no GITLAB_TOKEN is needed.
+    ## Hub above (workspace "btf"). Each asks the hub as the signed-in person
+    ## (hubAsCaller: their forwarded INFN AAI token), so answers follow that
+    ## person's roles in ARGUS; no administrator token is used, and
+    ## KNOWLEDGE_HUB_TOKEN can be removed from the out-of-band Secret
+    ## argus-mcp-instances-credentials in ai-platform (RAGFLOW_API_KEY stays).
+    ## epik8s-btf is a public baltig repo, so no GITLAB_TOKEN is needed.
     argusMcpInstances:
       knowledgeHub:
         url: "https://argus-hub-api.90.147.174.30.myip.cloud.infn.it/mcp"
@@ -1463,6 +1458,7 @@ aiPlatform:
         - name: btf-argus-hub
           source: knowledgeHub
           forwardUserToken: true
+          hubAsCaller: true
           workspaces: ["btf"]
           title: "BTF ARGUS Knowledge Hub"
           description: "ARGUS for BTF: devices, documentation and logbook from the ARGUS Knowledge Hub (workspace btf)."
@@ -1483,6 +1479,7 @@ aiPlatform:
         - name: euaps-argus-hub
           source: knowledgeHub
           forwardUserToken: true
+          hubAsCaller: true
           workspaces: ["euaps"]
           title: "EUAPS ARGUS Knowledge Hub"
           ## The hub's euaps workspace has EUAPS's Control Devices but no
@@ -1506,6 +1503,7 @@ aiPlatform:
         - name: sparc-argus-hub
           source: knowledgeHub
           forwardUserToken: true
+          hubAsCaller: true
           workspaces: ["sparc"]
           title: "SPARC ARGUS Knowledge Hub"
           description: "ARGUS for SPARC: devices, documentation and logbook from the ARGUS Knowledge Hub (workspace sparc)."
