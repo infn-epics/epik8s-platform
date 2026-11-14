@@ -262,9 +262,11 @@ networking:
     - name: plk8sdactrl001.lnf.infn.it
       labels:
         network: btf-189
+    ## vlan-110 removed 2026-11-14: the node has no br110 bridge (verified via
+    ## node-exporter). Entry kept on purpose: this Node is tracked by the
+    ## epik8s-platform-core Argo app, and dropping it would mark it for pruning.
     - name: plk8sdactrl002.lnf.infn.it
-      labels:
-        vlan-110: sparc-br-cams
+      labels: {}
     - name: plk8sdactrl003.lnf.infn.it
       labels:
         control: sparc-magnets
@@ -293,12 +295,13 @@ networking:
     - name: plk8sdadom005
       labels:
         lb-network-access: vlan-108
+        vlan-115: euaps-cams
+        vlan-197: sparc-net
     - name: plk8sdagpu001.lnf.infn.it
       labels:
         control: gpu
         gpu: nvidia-a2
         node-type: gpu
-        vlan-110: sparc-br-cams
         vlan-115: euaps-cams
     - name: plsparcdom001.lnf.infn.it
       labels:
