@@ -198,6 +198,11 @@ networking:
             "gateway": "192.168.115.10"
           }
         }
+    ## whereabouts (cluster-wide IPAM) since 2026-11-14, was host-local: with
+    ## host-local each node allocated from .201 on its own, so spreading the
+    ## SPARC cameras over more nodes would have produced duplicate IPs.
+    ## Same CIDR as default/sparc-cams-multinode, so both share the whereabouts
+    ## pool 192.168.110.0-24 and cannot hand out the same address.
     - name: sparc-br-cams
       namespace: sparc
       config: |
@@ -210,11 +215,14 @@ networking:
           "ipMasq": false,
           "hairpinMode": false,
           "ipam": {
-            "type": "host-local",
-            "subnet": "192.168.110.0/24",
-            "rangeStart": "192.168.110.201",
-            "rangeEnd": "192.168.110.253",
-            "gateway": "192.168.110.10"
+            "type": "whereabouts",
+            "range": "192.168.110.0/24",
+            "range_start": "192.168.110.201",
+            "range_end": "192.168.110.253",
+            "gateway": "192.168.110.10",
+            "kubernetes": {
+              "kubeconfig": "/etc/cni/net.d/whereabouts.d/whereabouts.kubeconfig"
+            }
           }
         }
     - name: sparc-cams
