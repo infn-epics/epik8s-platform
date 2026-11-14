@@ -286,6 +286,13 @@ networking:
         vlan-110: sparc-br-cams
         vlan-115: euaps-cams
         vlan-197: sparc-net
+    - name: plk8sdadom004.lnf.infn.it
+      labels:
+        lb-network-access: vlan-108
+    ## registered without the domain suffix on the live cluster
+    - name: plk8sdadom005
+      labels:
+        lb-network-access: vlan-108
     - name: plk8sdagpu001.lnf.infn.it
       labels:
         control: gpu
