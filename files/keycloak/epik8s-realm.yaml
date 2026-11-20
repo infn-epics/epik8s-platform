@@ -200,3 +200,50 @@ clients:
     defaultClientScopes: [web-origins, acr, profile, roles, email, basic]
     optionalClientScopes: [address, phone, offline_access, microprofile-jwt]
     protocolMappers: *epik8sMappers
+
+## External identity providers (brokering). Users log in with their home
+## account and land in THIS realm, which still issues the tokens - so roles,
+## `beamlines` and aud=epik8s-services work unchanged for brokered users.
+## A brokered user gets NO role and NO beamline group on first login: an admin
+## assigns them (deny by default, as above). Off unless configured in values;
+## see README.md "Federating INFN AAI".
+{{- with .Values.auth.keycloak.identityProviders.infnAai }}
+{{- if .clientId }}
+identityProviders:
+  - alias: {{ .alias }}
+    displayName: {{ .displayName | quote }}
+    providerId: oidc
+    ## The upstream client must list this redirect URI exactly:
+    ##   https://<keycloak host>/realms/epik8s/broker/{{ .alias }}/endpoint
+    enabled: {{ .enabled }}
+    trustEmail: false
+    storeToken: false
+    addReadTokenRoleOnCreate: false
+    linkOnly: false
+    firstBrokerLoginFlowAlias: first broker login
+    config:
+      issuer: {{ .issuer | quote }}
+      authorizationUrl: "{{ .issuer }}/protocol/openid-connect/auth"
+      tokenUrl: "{{ .issuer }}/protocol/openid-connect/token"
+      userInfoUrl: "{{ .issuer }}/protocol/openid-connect/userinfo"
+      logoutUrl: "{{ .issuer }}/protocol/openid-connect/logout"
+      jwksUrl: "{{ .issuer }}/protocol/openid-connect/certs"
+      useJwksUrl: "true"
+      validateSignature: "true"
+      clientId: {{ .clientId | quote }}
+      clientAuthMethod: client_secret_post
+{{- if .clientSecretName }}
+      ## Resolved by Keycloak at import from the env var the Deployment sets
+      ## from secret/{{ .clientSecretName }} - never stored in git.
+      clientSecret: "${INFN_AAI_CLIENT_SECRET}"
+{{- end }}
+      ## PKCE works for both public and confidential upstream clients.
+      pkceEnabled: "true"
+      pkceMethod: S256
+      defaultScope: "openid profile email"
+      ## Refresh name/email from the upstream token on every login.
+      syncMode: FORCE
+      backchannelSupported: "false"
+      hideOnLogin: "false"
+{{- end }}
+{{- end }}

@@ -937,6 +937,14 @@ auth:
     devRedirectUris:
       - http://localhost:5173/*
       - http://localhost:4173/*
+    ## INFN AAI federation, prepared but OFF: the upstream `camunda` client does
+    ## not yet accept our broker redirect URI
+    ## (https://keycloak.k8sda.lnf.infn.it/realms/epik8s/broker/infn-aai/endpoint).
+    ## Flip enabled once INFN AAI has added it - README.md "Federating INFN AAI".
+    identityProviders:
+      infnAai:
+        enabled: false
+        clientId: camunda
 
 aiPlatform:
   enabled: true

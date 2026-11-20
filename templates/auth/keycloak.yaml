@@ -182,6 +182,16 @@ spec:
               value: "true"
             - name: JAVA_OPTS_APPEND
               value: "-XX:MaxRAMPercentage=70"
+            {{- with $k.identityProviders.infnAai }}
+            {{- if and .clientId .clientSecretName }}
+            ## Substituted into the realm import (${INFN_AAI_CLIENT_SECRET}).
+            - name: INFN_AAI_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .clientSecretName }}
+                  key: client-secret
+            {{- end }}
+            {{- end }}
           ports:
             - name: http
               containerPort: 8080

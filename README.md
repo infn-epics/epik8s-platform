@@ -626,10 +626,57 @@ a wrong scheme; the password grant is refused on the dashboard client.
   the admin and all test passwords before it is used for anything real. The
   policy is applied at import time only - on a running realm change it in the
   admin console or with `kcadm update realms/epik8s`.
-- Federate the corporate identity: add INFN AAI
-  (`https://idp-test.app.infn.it/auth/realms/aai`) as an identity provider and
-  map its users to these roles/groups, so people are not managed twice.
+- Federate the corporate identity - prepared, see "Federating INFN AAI" below.
 - SMTP for password reset, and review the token/session lifetimes.
+
+### Federating INFN AAI
+
+`auth.keycloak.identityProviders.infnAai` brokers INFN AAI
+(`https://idp-test.app.infn.it/auth/realms/aai`) into the realm: the login page
+gets a "Sign in with INFN AAI" button, the user authenticates at AAI, and this
+realm still issues the token - so `roles`, `beamlines` and `aud` are unchanged
+and no service or dashboard change is needed. A brokered user is created with
+**no role and no beamline group**; an admin assigns them (deny by default).
+
+The block is rendered only when `clientId` is set; `enabled` is Keycloak's
+on/off flag for the provider. On k8sda it is prepared with `clientId: camunda`
+(the client webolog uses) and **`enabled: false`**, because AAI's `camunda`
+client lists exact redirect URIs (the webolog hosts) and refuses ours. To turn
+it on:
+
+1. Ask INFN AAI to add this exact redirect URI - preferably to a dedicated
+   confidential client rather than `camunda`:
+   `https://keycloak.k8sda.lnf.infn.it/realms/epik8s/broker/infn-aai/endpoint`
+2. Check it is accepted (AAI's login page = OK; "Invalid parameter:
+   redirect_uri" = not yet):
+   ```bash
+   curl -s -G https://idp-test.app.infn.it/auth/realms/aai/protocol/openid-connect/auth \
+     --data-urlencode client_id=camunda --data-urlencode response_type=code --data-urlencode scope=openid \
+     --data-urlencode redirect_uri=https://keycloak.k8sda.lnf.infn.it/realms/epik8s/broker/infn-aai/endpoint \
+     | grep -o 'Invalid parameter: redirect_uri' || echo accepted
+   ```
+3. Set `enabled: true` (and `clientId`, plus `clientSecretName` for a
+   confidential client: `kubectl -n keycloak create secret generic infn-aai-client
+   --from-literal=client-secret=...`). That covers fresh installs.
+4. The running realm is not re-imported, so create the provider there too,
+   from the same rendered definition:
+   ```bash
+   helm template epik8s-platform . -f values-k8sda.yaml --show-only templates/auth/keycloak.yaml \
+     | yq 'select(.metadata.name=="keycloak-realm") | .data["epik8s-realm.json"]' \
+     | jq '.identityProviders[0]' > /tmp/infn-aai.json   # confidential: put the real secret in .config.clientSecret
+   POD=$(kubectl -n keycloak get pod -l app=keycloak -o name)
+   kubectl -n keycloak cp /tmp/infn-aai.json ${POD#pod/}:/tmp/infn-aai.json
+   kubectl -n keycloak exec $POD -- sh -c '/opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080 \
+     --realm master --user "$KC_BOOTSTRAP_ADMIN_USERNAME" --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" \
+     && /opt/keycloak/bin/kcadm.sh create identity-provider/instances -r epik8s -f /tmp/infn-aai.json; rm -f /tmp/infn-aai.json'
+   ```
+   (Update later with `kcadm.sh update identity-provider/instances/infn-aai -r epik8s -s enabled=true`.)
+5. After a user's first AAI login, grant access: add them to their beamline
+   group(s) and a level role (`epik8s-viewer` ... `epik8s-admin`).
+
+A user whose email matches an existing local account is offered to link the
+two on first login (Keycloak's "first broker login" flow); `trustEmail` is off,
+so linking needs the local password.
 
 ### Replacing the dashboard's Git-token login
 

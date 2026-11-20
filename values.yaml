@@ -176,6 +176,20 @@ auth:
     dashboardHosts: []
     ## Extra redirect URIs for local development/testing only.
     devRedirectUris: []
+    ## External identity providers brokered into the realm. Rendered only
+    ## when clientId is set; `enabled` is Keycloak's own on/off switch (the
+    ## "Sign in with INFN AAI" button). Import-time only, like the rest of the
+    ## realm - see README.md "Federating INFN AAI".
+    identityProviders:
+      infnAai:
+        enabled: false
+        alias: infn-aai
+        displayName: INFN AAI
+        issuer: https://idp-test.app.infn.it/auth/realms/aai
+        clientId: ""
+        ## Only for a confidential upstream client: secret with key
+        ## `client-secret`, provisioned out of band. Empty = public client.
+        clientSecretName: ""
 
 ## kube-prometheus-stack subchart values (dependency name: kube-prometheus-stack)
 kube-prometheus-stack: {}
