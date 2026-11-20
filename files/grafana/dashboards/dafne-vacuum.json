@@ -1,0 +1,291 @@
+{
+  "id": null,
+  "uid": "dafne-vacuum",
+  "title": "DAFNE Vacuum",
+  "description": "Historical pressure readbacks for DAFNE VUG gauges",
+  "tags": ["dafne", "vacuum", "epics"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "DS_ARCHIVER",
+        "label": "Archiver datasource",
+        "type": "datasource",
+        "query": "sasaki77-archiverappliance-datasource",
+        "refresh": 1,
+        "hide": 0,
+        "multi": false,
+        "includeAll": false,
+        "regex": "",
+        "options": [],
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Transfer lines and accumulator",
+      "description": "VUGTR001, VUGTL001, VUGA1001, VUGA2001, VUGA3001",
+      "datasource": {
+        "type": "sasaki77-archiverappliance-datasource",
+        "uid": "$DS_ARCHIVER"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pressurebar",
+          "decimals": 3,
+          "custom": {
+            "axisLabel": "Pressure (bar)",
+            "scaleDistribution": { "type": "log", "log": 10 },
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "refId": "A", "target": "DAFNE:VAC:VUGTR001:PRES_RB", "alias": "VUGTR001", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "B", "target": "DAFNE:VAC:VUGTL001:PRES_RB", "alias": "VUGTL001", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "C", "target": "DAFNE:VAC:VUGA1001:PRES_RB", "alias": "VUGA1001", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "D", "target": "DAFNE:VAC:VUGA2001:PRES_RB", "alias": "VUGA2001", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "E", "target": "DAFNE:VAC:VUGA3001:PRES_RB", "alias": "VUGA3001", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "PS gauges",
+      "description": "Pressure readbacks for the PS gauges",
+      "datasource": {
+        "type": "sasaki77-archiverappliance-datasource",
+        "uid": "$DS_ARCHIVER"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pressurebar",
+          "decimals": 3,
+          "custom": {
+            "axisLabel": "Pressure (bar)",
+            "scaleDistribution": { "type": "log", "log": 10 },
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "refId": "A", "target": "DAFNE:VAC:VUGPS203:PRES_RB", "alias": "VUGPS203", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "B", "target": "DAFNE:VAC:VUGPS101:PRES_RB", "alias": "VUGPS101", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "C", "target": "DAFNE:VAC:VUGPS102:PRES_RB", "alias": "VUGPS102", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "D", "target": "DAFNE:VAC:VUGPS103:PRES_RB", "alias": "VUGPS103", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "E", "target": "DAFNE:VAC:VUGPS104:PRES_RB", "alias": "VUGPS104", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "F", "target": "DAFNE:VAC:VUGPS105:PRES_RB", "alias": "VUGPS105", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "G", "target": "DAFNE:VAC:VUGPS201:PRES_RB", "alias": "VUGPS201", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "H", "target": "DAFNE:VAC:VUGPS202:PRES_RB", "alias": "VUGPS202", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "PL gauges",
+      "description": "Pressure readbacks for the PL gauges",
+      "datasource": {
+        "type": "sasaki77-archiverappliance-datasource",
+        "uid": "$DS_ARCHIVER"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pressurebar",
+          "decimals": 3,
+          "custom": {
+            "axisLabel": "Pressure (bar)",
+            "scaleDistribution": { "type": "log", "log": 10 },
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "refId": "A", "target": "DAFNE:VAC:VUGPL201:PRES_RB", "alias": "VUGPL201", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "B", "target": "DAFNE:VAC:VUGPL202:PRES_RB", "alias": "VUGPL202", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "C", "target": "DAFNE:VAC:VUGPL203:PRES_RB", "alias": "VUGPL203", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "D", "target": "DAFNE:VAC:VUGPL101:PRES_RB", "alias": "VUGPL101", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "E", "target": "DAFNE:VAC:VUGPL102:PRES_RB", "alias": "VUGPL102", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "F", "target": "DAFNE:VAC:VUGPL103:PRES_RB", "alias": "VUGPL103", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "I gauges",
+      "description": "Pressure readbacks for the I gauges",
+      "datasource": {
+        "type": "sasaki77-archiverappliance-datasource",
+        "uid": "$DS_ARCHIVER"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pressurebar",
+          "decimals": 3,
+          "custom": {
+            "axisLabel": "Pressure (bar)",
+            "scaleDistribution": { "type": "log", "log": 10 },
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "refId": "A", "target": "DAFNE:VAC:VUGI1001:PRES_RB", "alias": "VUGI1001", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "B", "target": "DAFNE:VAC:VUGI2001:PRES_RB", "alias": "VUGI2001", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "TE and TP gauges",
+      "description": "Pressure readbacks for the TE and TP gauges",
+      "datasource": {
+        "type": "sasaki77-archiverappliance-datasource",
+        "uid": "$DS_ARCHIVER"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pressurebar",
+          "decimals": 3,
+          "custom": {
+            "axisLabel": "Pressure (bar)",
+            "scaleDistribution": { "type": "log", "log": 10 },
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "refId": "A", "target": "DAFNE:VAC:VUGTE001:PRES_RB", "alias": "VUGTE001", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "B", "target": "DAFNE:VAC:VUGTE002:PRES_RB", "alias": "VUGTE002", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "C", "target": "DAFNE:VAC:VUGTP001:PRES_RB", "alias": "VUGTP001", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "EL gauges",
+      "description": "Pressure readbacks for the EL gauges",
+      "datasource": {
+        "type": "sasaki77-archiverappliance-datasource",
+        "uid": "$DS_ARCHIVER"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pressurebar",
+          "decimals": 3,
+          "custom": {
+            "axisLabel": "Pressure (bar)",
+            "scaleDistribution": { "type": "log", "log": 10 },
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "refId": "A", "target": "DAFNE:VAC:VUGEL203:PRES_RB", "alias": "VUGEL203", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "B", "target": "DAFNE:VAC:VUGEL202:PRES_RB", "alias": "VUGEL202", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "C", "target": "DAFNE:VAC:VUGEL201:PRES_RB", "alias": "VUGEL201", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "D", "target": "DAFNE:VAC:VUGEL103:PRES_RB", "alias": "VUGEL103", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "E", "target": "DAFNE:VAC:VUGEL102:PRES_RB", "alias": "VUGEL102", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "F", "target": "DAFNE:VAC:VUGEL101:PRES_RB", "alias": "VUGEL101", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "ES gauges",
+      "description": "Pressure readbacks for the ES gauges",
+      "datasource": {
+        "type": "sasaki77-archiverappliance-datasource",
+        "uid": "$DS_ARCHIVER"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pressurebar",
+          "decimals": 3,
+          "custom": {
+            "axisLabel": "Pressure (bar)",
+            "scaleDistribution": { "type": "log", "log": 10 },
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "refId": "A", "target": "DAFNE:VAC:VUGES203:PRES_RB", "alias": "VUGES203", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "B", "target": "DAFNE:VAC:VUGES202:PRES_RB", "alias": "VUGES202", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "C", "target": "DAFNE:VAC:VUGES201:PRES_RB", "alias": "VUGES201", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "D", "target": "DAFNE:VAC:VUGES103:PRES_RB", "alias": "VUGES103", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "E", "target": "DAFNE:VAC:VUGES102:PRES_RB", "alias": "VUGES102", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] },
+        { "refId": "F", "target": "DAFNE:VAC:VUGES101:PRES_RB", "alias": "VUGES101", "operator": "mean", "regex": false, "live": false, "stream": false, "functions": [] }
+      ]
+    }
+  ]
+}

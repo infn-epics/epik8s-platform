@@ -708,6 +708,7 @@ grafana:
   ## chart) can't reach a path in this repo - each file must be injected at
   ## deploy time instead, one --set-file per dashboard, e.g.:
   ##   --set-file dashboards.default.llm-observability.json=files/grafana/dashboards/llm-observability.json
+  ##   --set-file dashboards.default.dafne-vacuum.json=files/grafana/dashboards/dafne-vacuum.json
   dashboardProviders:
     dashboardproviders.yaml:
       apiVersion: 1
