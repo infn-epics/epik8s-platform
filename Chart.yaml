@@ -4,7 +4,7 @@ description: >
   EPIK8S platform layer - site-specific networking, storage, monitoring, logging,
   observability, backend and AI-platform configuration, kept separate from beamline
   (epik8s-chart) charts.
-version: 0.1.0
+version: 0.2.0
 dependencies:
   - name: argo-cd
     version: "7.8.2"
