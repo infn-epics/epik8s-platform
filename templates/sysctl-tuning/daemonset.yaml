@@ -52,6 +52,17 @@ spec:
             - |
               sysctl -w fs.inotify.max_user_instances={{ $v.inotify.maxUserInstances | int }}
               sysctl -w fs.inotify.max_user_watches={{ $v.inotify.maxUserWatches | int }}
+              {{- with $v.network }}
+              {{- if .rmemMax }}
+              sysctl -w net.core.rmem_max={{ .rmemMax | int }}
+              {{- end }}
+              {{- if .rmemDefault }}
+              sysctl -w net.core.rmem_default={{ .rmemDefault | int }}
+              {{- end }}
+              {{- if .netdevMaxBacklog }}
+              sysctl -w net.core.netdev_max_backlog={{ .netdevMaxBacklog | int }}
+              {{- end }}
+              {{- end }}
           resources:
             requests: { cpu: 10m, memory: 16Mi }
             limits: { cpu: 50m, memory: 32Mi }

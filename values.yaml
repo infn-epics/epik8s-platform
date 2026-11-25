@@ -45,6 +45,16 @@ sysctlTuning:
   inotify:
     maxUserInstances: 2048
     maxUserWatches: 1048576
+  ## GigE Vision cameras (aravis) stream whole frames as UDP bursts: a
+  ## 1920x1200 Mono12 frame is ~4.6 MB at line rate. With the kernel default
+  ## rmem_max (208 KB) the receive socket overflows inside every frame, so
+  ## frames time out (SPARC SBN02/SBN03 on plk8sdadom002, 2026-11-25). Values
+  ## match plk8sdadom001, the only node where they were set (by hand) and the
+  ## only one where those cameras worked. Empty/0 leaves the kernel value.
+  network:
+    rmemMax: 26214400
+    rmemDefault: 26214400
+    netdevMaxBacklog: 5000
 
 platformBootstrap:
   ## Bootstrap-only toggle: enable to install ArgoCD into a fresh cluster.
