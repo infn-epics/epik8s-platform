@@ -39,6 +39,10 @@ spec:
         app: sysctl-tuning
     spec:
       hostPID: true
+      {{- if $v.network }}
+      # net.core.* are per network namespace: set them in the host's, not the pod's
+      hostNetwork: true
+      {{- end }}
       tolerations:
         - operator: Exists
       initContainers:
