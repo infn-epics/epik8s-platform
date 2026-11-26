@@ -1475,6 +1475,16 @@ aiPlatform:
         backends:
           loki:
             baseUrl: "http://epik8s-platform-loki.logging.svc.cluster.local:3100"
+          ## node-exporter/cAdvisor metrics for inspect_pod/inspect_node (node and
+          ## pod network rates, drops, UDP buffer overflows, CPU) - this
+          ## platform's own kube-prometheus-stack (monitoring domain).
+          prometheus:
+            baseUrl: "http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090"
+          ## epik8s' ioc-chart labels IOC pods app.kubernetes.io/instance=<ioc>;
+          ## argus-helm-chart's default (app=ioc,device=...) matches none of them.
+          ## Merged under each instance's own kubernetes: {namespaceDefault: ...}.
+          kubernetes:
+            iocLabelSelectorTemplate: "app.kubernetes.io/instance={ioc_name}"
       ## One ARGUS per beamline answering from the ARGUS Knowledge Hub. The
       ## YAML-backed counterparts (btf/euaps/sparc-argus-yaml) ran alongside
       ## them for a comparison until 2026-10-28, and were removed once the hub
