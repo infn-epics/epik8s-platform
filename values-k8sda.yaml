@@ -1473,6 +1473,15 @@ aiPlatform:
             backends:
               epics: {caAddrList: "gateway.btf.svc.cluster.local", caAutoAddrList: false, pvaAddrList: "pvagateway.btf.svc.cluster.local"}
               kubernetes: {namespaceDefault: "btf"}
+              ## PV search (search_pvs) and the beamline config in git (IOC device
+              ## addresses for check_connectivity, get_config_history, the inventory
+              ## fallback when the hub has no records for a device group) - the same
+              ## ChannelFinder and repo/branch BTF's own ARGUS uses.
+              channelfinder: {baseUrl: "http://btf-channelfinder.k8sda.lnf.infn.it"}
+              git:
+                gitlab: {baseUrl: "https://baltig.infn.it"}
+                defaultRepos: ["https://baltig.infn.it/lnf-da-control/epik8s-btf.git"]
+                defaultRef: "main"
               ## Archived history, and archiving a magnet set's PVs (archive_magnet_pvs,
               ## through the appliance's /mgmt/bpl) - the same ingress BTF's own ARGUS uses.
               archiver: {baseUrl: "http://btf-archiver.k8sda.lnf.infn.it"}
@@ -1497,6 +1506,15 @@ aiPlatform:
             backends:
               epics: {caAddrList: "gateway.euaps.svc.cluster.local", caAutoAddrList: false, pvaAddrList: "pvagateway.euaps.svc.cluster.local"}
               kubernetes: {namespaceDefault: "euaps"}
+              ## PV search (search_pvs) and the beamline config in git (IOC device
+              ## addresses for check_connectivity, get_config_history, the inventory
+              ## fallback when the hub has no records for a device group) - the same
+              ## ChannelFinder and repo/branch EUAPS's own ARGUS uses.
+              channelfinder: {baseUrl: "http://euaps-channelfinder.k8sda.lnf.infn.it"}
+              git:
+                gitlab: {baseUrl: "https://baltig.infn.it"}
+                defaultRepos: ["https://baltig.infn.it/lnf-da-control/epik8s-euaps.git"]
+                defaultRef: "devel"
               ## Archived history, and archiving a magnet set's PVs (archive_magnet_pvs,
               ## through the appliance's /mgmt/bpl) - the same ingress EUAPS's own ARGUS uses.
               archiver: {baseUrl: "http://euaps-archiver.k8sda.lnf.infn.it"}
@@ -1518,6 +1536,15 @@ aiPlatform:
             backends:
               epics: {caAddrList: "gateway.sparc.svc.cluster.local", caAutoAddrList: false, pvaAddrList: "pvagateway.sparc.svc.cluster.local"}
               kubernetes: {namespaceDefault: "sparc"}
+              ## PV search (search_pvs) and the beamline config in git (IOC device
+              ## addresses for check_connectivity, get_config_history, the inventory
+              ## fallback when the hub has no records for a device group) - the same
+              ## ChannelFinder and repo/branch SPARC's own ARGUS uses.
+              channelfinder: {baseUrl: "http://sparc-channelfinder.k8sda.lnf.infn.it"}
+              git:
+                gitlab: {baseUrl: "https://baltig.infn.it"}
+                defaultRepos: ["https://baltig.infn.it/lnf-da-control/epik8-sparc.git"]
+                defaultRef: "main"
               ## Archived history, and archiving a magnet set's PVs (archive_magnet_pvs,
               ## through the appliance's /mgmt/bpl) - the same ingress SPARC's own ARGUS uses.
               archiver: {baseUrl: "http://sparc-archiver.k8sda.lnf.infn.it"}
