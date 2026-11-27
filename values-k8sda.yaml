@@ -1485,6 +1485,11 @@ aiPlatform:
           ## Merged under each instance's own kubernetes: {namespaceDefault: ...}.
           kubernetes:
             iocLabelSelectorTemplate: "app.kubernetes.io/instance={ioc_name}"
+        ## pods/exec in the beamline namespace for check_connectivity: it pings
+        ## an IOC's devices from inside the IOC's pod, the only place private
+        ## device networks (power-supply LANs, camera VLANs) are reachable from.
+        rbac:
+          iocExec: true
       ## One ARGUS per beamline answering from the ARGUS Knowledge Hub. The
       ## YAML-backed counterparts (btf/euaps/sparc-argus-yaml) ran alongside
       ## them for a comparison until 2026-10-28, and were removed once the hub
