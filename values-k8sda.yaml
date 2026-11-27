@@ -1222,10 +1222,16 @@ aiPlatform:
         apiKeySecretKey: "AIGW_90_API_KEY"
         baseURL: "https://ai-gateway.131.154.99.90.myip.cloud.infn.it/v1"
         models:
-          default: ["minimax-m27","qwen36-27b-x2","qwen36-27b", "gemma-4-31b-it", "qwen35-122b-a10b-gptq-int4"]
+          default: ["qwen38-27b-fp8","minimax-m27","qwen36-27b-x2","qwen36-27b", "gemma-4-31b-it", "qwen35-122b-a10b-gptq-int4"]
           fetch: true
         modelDisplayLabel: "AI-Gateway-90"
         tokenConfig:
+          ## 262144 verified 2026-11-27 by the oversized-prompt method below
+          ## (vLLM: "maximum context length is 262144 tokens").
+          qwen38-27b-fp8:
+            context: 262144
+            prompt: 0
+            completion: 0
           minimax-m27:
             context: 204800
             prompt: 0
@@ -1268,7 +1274,10 @@ aiPlatform:
             context: 262144
             prompt: 0
             completion: 0
-    ## New conversations open on AI-Gateway-90 / minimax-m27 by default.
+    ## New conversations open on AI-Gateway-90 / qwen38-27b-fp8 by default
+    ## (2026-11-27: minimax-m27 left turns empty after ARGUS tool calls and
+    ## reported results of tools it never called; qwen38-27b-fp8 ran the same
+    ## ARGUS tests correctly).
     ##
     ## maxContextTokens per model below: LibreChat has no config knob for its
     ## own hardcoded `system_default` fallback (32000 tokens - baked into
@@ -1289,9 +1298,15 @@ aiPlatform:
     modelSpecs:
       enabled: true
       list:
+        - name: "ai-gateway-90-qwen38-27b-fp8"
+          label: "AI-Gateway-90 - Qwen3.8 27B FP8"
+          default: true
+          preset:
+            endpoint: "AI-Gateway-90"
+            model: "qwen38-27b-fp8"
+            maxContextTokens: 262144
         - name: "ai-gateway-90-minimax-m27"
           label: "AI-Gateway-90 - Minimax M2.7"
-          default: true
           preset:
             endpoint: "AI-Gateway-90"
             model: "minimax-m27"
@@ -1336,7 +1351,7 @@ aiPlatform:
             maxContextTokens: 262144
       ## Without this, a non-empty modelSpecs.list hides LibreChat's normal
       ## endpoint/model dropdown entirely - every llmEndpoints[].name above
-      ## must be listed here too, or users can only ever get minimax-m27.
+      ## must be listed here too, or users can only ever get the default tile's model.
       ## Note this dropdown path bypasses the maxContextTokens presets above
       ## entirely (LibreChat only applies a preset's fields when a spec tile
       ## itself is selected) - picking a model via the raw dropdown still
